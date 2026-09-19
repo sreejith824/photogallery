@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const requests = await db
       .select()
       .from(accessRequests)
-      .where((ar) => ar.status === "pending");
+      .where(eq(accessRequests.status, "pending"));
 
     return NextResponse.json(requests);
   } catch (error) {
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const req = await db
       .select()
       .from(accessRequests)
-      .where((ar) => ar.id === requestId)
+      .where(eq(accessRequests.id, requestId))
       .limit(1);
 
     if (!req || req.length === 0) {
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
           status: "denied",
           decidedAt: new Date(),
         })
-        .where((ar) => ar.id === requestId);
+        .where(eq(accessRequests.id, requestId));
 
       // Send denial email
       try {
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         status: "approved",
         decidedAt: new Date(),
       })
-      .where((ar) => ar.id === requestId);
+      .where(eq(accessRequests.id, requestId));
 
     // Send approval email with magic link
     const magicLink = `${process.env.NEXTAUTH_URL}/share/${token}`;

@@ -1,6 +1,6 @@
 import { db } from "@/lib/index";
 import { accessGrants } from "@/lib/schema";
-import { eq, gt } from "drizzle-orm";
+import { eq, and, or, gt, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import * as crypto from "crypto";
 
@@ -26,10 +26,14 @@ export async function POST(request: NextRequest) {
       .select()
       .from(accessGrants)
       .where(
-        (ag) =>
-          ag.tokenHash === tokenHash &&
-          (ag.expiresAt === null || ag.expiresAt > new Date()) &&
-          ag.revokedAt === null
+        and(
+          eq(accessGrants.tokenHash, tokenHash),
+          or(
+            isNull(accessGrants.expiresAt),
+            gt(accessGrants.expiresAt, new Date())
+          ),
+          isNull(accessGrants.revokedAt)
+        )
       )
       .limit(1);
 

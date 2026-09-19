@@ -1,5 +1,6 @@
 import { db } from "@/lib/index";
 import { accessRequests } from "@/lib/schema";
+import { eq, and } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 
@@ -22,10 +23,11 @@ export async function POST(request: NextRequest) {
       .select()
       .from(accessRequests)
       .where(
-        (ar) =>
-          ar.scopeId === photoId &&
-          ar.requesterEmail === requesterEmail &&
-          ar.status === "pending"
+        and(
+          eq(accessRequests.scopeId, photoId),
+          eq(accessRequests.requesterEmail, requesterEmail),
+          eq(accessRequests.status, "pending")
+        )
       );
 
     if (existingRequest.length > 0) {
