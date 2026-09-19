@@ -23,10 +23,18 @@ export default function GalleryPage() {
   useEffect(() => {
     const fetchPhotos = async () => {
       try {
-        // TODO: Implement actual photo fetching from API
-        setPhotos([]);
+        const params = new URLSearchParams();
+        if (filter.year) params.append("year", filter.year);
+        if (filter.place) params.append("place", filter.place);
+
+        const response = await fetch(`/api/photos?${params.toString()}`);
+        if (!response.ok) throw new Error("Failed to fetch photos");
+
+        const data = await response.json();
+        setPhotos(data);
       } catch (error) {
         console.error("Failed to fetch photos:", error);
+        setPhotos([]);
       } finally {
         setLoading(false);
       }
@@ -97,7 +105,7 @@ export default function GalleryPage() {
                   <div className="aspect-square bg-gray-200 relative">
                     {photo.thumbnailKey ? (
                       <Image
-                        src={`/api/photos/${photo.id}/thumbnail/thumb`}
+                        src={`/api/photos/${photo.id}/thumbnail`}
                         alt={photo.caption || "Photo"}
                         fill
                         className="object-cover"

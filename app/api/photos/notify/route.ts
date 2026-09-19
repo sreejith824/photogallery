@@ -97,19 +97,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Create photo record
-    const photo = await db.insert(photos).values({
-      r2Key: s3Key,
-      thumbnailKey,
-      takenAt,
-      place,
-      lat,
-      lng,
-      caption: filename,
-      visibility: "public",
-      width,
-      height,
-      tagsPending: 1, // Mark as pending Claude tagging
-    });
+    const insertResult = await db
+      .insert(photos)
+      .values({
+        r2Key: s3Key,
+        thumbnailKey,
+        takenAt,
+        place,
+        lat,
+        lng,
+        caption: filename,
+        visibility: "public",
+        width,
+        height,
+        tagsPending: 1, // Mark as pending Claude tagging
+      })
+      .returning();
+
+    const createdPhoto = insertResult[0];
 
     // Queue Claude vision tagging in the background using `after()`
     // This will run after the response is sent
@@ -119,7 +124,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      id: photo,
+      id: createdPhoto.id,
       s3Key,
       thumbnailKey,
       message: "Photo uploaded successfully",
