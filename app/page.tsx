@@ -56,7 +56,7 @@ export default function GalleryPage() {
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-900">PhotoGallery</h1>
-          <Link href="/admin" className="text-blue-600 hover:text-blue-700">
+          <Link href="/admin" className="text-blue-600 hover:text-blue-700 font-medium">
             Admin
           </Link>
         </div>
