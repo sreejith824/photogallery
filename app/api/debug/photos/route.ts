@@ -12,6 +12,11 @@ export async function GET() {
         caption: p.caption,
         r2_key: p.r2Key,
         thumbnail_key: p.thumbnailKey,
+        uploaded_at: p.uploadedAt,
+        taken_at: p.takenAt,
+        taken_at_year: p.takenAt ? new Date(p.takenAt).getFullYear() : null,
+        place: p.place,
+        visibility: p.visibility,
       }))
     });
   } catch (error) {

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
@@ -104,11 +103,10 @@ export default function GalleryPage() {
                 <div className="bg-white rounded-lg overflow-hidden shadow hover:shadow-lg transition cursor-pointer">
                   <div className="aspect-square bg-gray-200 relative">
                     {photo.thumbnailKey ? (
-                      <Image
+                      <img
                         src={`/api/photos/${photo.id}/thumbnail`}
                         alt={photo.caption || "Photo"}
-                        fill
-                        className="object-cover"
+                        className="w-full h-full object-cover"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-400">

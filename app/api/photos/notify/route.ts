@@ -72,19 +72,28 @@ export async function POST(request: NextRequest) {
     let lng: string | null = null;
 
     try {
+      console.log("Starting EXIF extraction...");
       const tags = await exifr.parse(buffer);
       if (tags) {
         exifData = tags;
         if (tags.DateTime) {
           takenAt = new Date(tags.DateTime);
+          console.log("✓ EXIF DateTime found:", takenAt);
+        } else {
+          console.log("⊘ No DateTime in EXIF, using uploadedAt as fallback");
+          takenAt = new Date();
         }
         if (tags.latitude && tags.longitude) {
           lat = tags.latitude.toString();
           lng = tags.longitude.toString();
         }
+      } else {
+        console.log("⊘ No EXIF data found, using uploadedAt as fallback");
+        takenAt = new Date();
       }
     } catch (error) {
       console.error("EXIF parsing error:", error);
+      takenAt = new Date(); // Fallback to current time
     }
 
     // Reverse geocode if we have GPS data
@@ -96,15 +105,19 @@ export async function POST(request: NextRequest) {
     // Generate thumbnail
     let thumbnailKey: string | null = null;
     try {
+      console.log("Starting thumbnail generation...");
       const thumbnailBuffer = await sharp(buffer)
         .resize(400, 400, { fit: "cover", withoutEnlargement: true })
         .webp({ quality: 80 })
         .toBuffer();
 
+      console.log("Thumbnail buffer created, size:", thumbnailBuffer.length);
       thumbnailKey = `thumbnails/${Date.now()}_${filename}.webp`;
+      console.log("Uploading thumbnail to R2:", thumbnailKey);
       await uploadFile(thumbnailKey, thumbnailBuffer, "image/webp");
+      console.log("✓ Thumbnail uploaded successfully");
     } catch (error) {
-      console.error("Thumbnail generation error:", error);
+      console.error("✗ Thumbnail generation error:", error);
     }
 
     // Get image dimensions

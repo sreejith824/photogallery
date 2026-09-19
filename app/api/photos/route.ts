@@ -12,11 +12,12 @@ export async function GET(request: NextRequest) {
 
     let query = db.select().from(photos).where(sql`${photos.visibility} = 'public'`);
 
-    if (year) {
-      const startDate = new Date(`${year}-01-01`);
-      const endDate = new Date(`${year}-12-31`);
+    if (year && /^\d{4}$/.test(year)) {
+      const startDate = new Date(`${year}-01-01`).toISOString();
+      const endDate = new Date(`${year}-12-31`).toISOString();
+      // Use takenAt if available, otherwise use uploadedAt
       query = query.where(
-        sql`${photos.takenAt} >= ${startDate} AND ${photos.takenAt} <= ${endDate}`
+        sql`(${photos.takenAt} >= ${startDate} AND ${photos.takenAt} <= ${endDate}) OR (${photos.takenAt} IS NULL AND ${photos.uploadedAt} >= ${startDate} AND ${photos.uploadedAt} <= ${endDate})`
       );
     }
 
