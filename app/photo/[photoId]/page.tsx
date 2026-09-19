@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Image from "next/image";
 import RequestAccessForm from "@/components/RequestAccessForm";
 
 interface Photo {
@@ -99,12 +98,10 @@ export default function PhotoDetailPage() {
         ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             {/* Image */}
-            <div className="relative w-full aspect-auto">
-              <Image
+            <div className="relative w-full">
+              <img
                 src={photo.imageUrl}
                 alt={photo.caption || "Photo"}
-                width={1200}
-                height={800}
                 className="w-full h-auto"
               />
             </div>

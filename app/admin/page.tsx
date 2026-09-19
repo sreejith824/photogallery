@@ -71,6 +71,23 @@ export default function AdminPage() {
             </div>
           </Link>
 
+          {/* Manage Photos Card */}
+          <Link href="/admin/photos">
+            <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Manage Photos
+                  </h2>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Edit, delete, and organize photos
+                  </p>
+                </div>
+                <span className="text-3xl">🗑️</span>
+              </div>
+            </div>
+          </Link>
+
           {/* Grants Card */}
           <Link href="/admin/grants">
             <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer">

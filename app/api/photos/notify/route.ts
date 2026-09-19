@@ -5,8 +5,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { uploadFile } from "@/lib/r2";
 import sharp from "sharp";
 import * as exifr from "exifr";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 
 export const runtime = "nodejs";
+
+const s3Client = new S3Client({
+  region: "auto",
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY || "",
+    secretAccessKey: process.env.R2_SECRET_KEY || "",
+  },
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+});
+
+async function getFileFromR2(key: string): Promise<Buffer> {
+  const command = new GetObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: key,
+  });
+  const response = await s3Client.send(command);
+  return Buffer.from(await response.Body!.transformToByteArray());
+}
 
 async function reverseGeocode(
   lat: number,
@@ -32,16 +51,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { s3Key, filename, originalBuffer } = await request.json();
+    const { s3Key, filename } = await request.json();
 
-    if (!s3Key || !originalBuffer) {
+    if (!s3Key) {
       return NextResponse.json(
-        { error: "s3Key and originalBuffer are required" },
+        { error: "s3Key is required" },
         { status: 400 }
       );
     }
 
-    const buffer = Buffer.from(originalBuffer, "base64");
+    // Download file from R2
+    console.log("Downloading from R2:", s3Key);
+    const buffer = await getFileFromR2(s3Key);
+    console.log("Downloaded buffer size:", buffer.length);
 
     // Extract EXIF data
     let exifData: any = {};
@@ -110,18 +132,11 @@ export async function POST(request: NextRequest) {
         visibility: "public",
         width,
         height,
-        tagsPending: 1, // Mark as pending Claude tagging
+        tagsPending: 1,
       })
       .returning();
 
     const createdPhoto = insertResult[0];
-
-    // Queue Claude vision tagging in the background using `after()`
-    // This will run after the response is sent
-    if (process.env.ANTHROPIC_API_KEY) {
-      // Background tagging happens here via `after()` in production
-      // For now, we'll just mark it as pending
-    }
 
     return NextResponse.json({
       id: createdPhoto.id,
@@ -132,7 +147,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Upload notify error:", error);
     return NextResponse.json(
-      { error: "Failed to process photo" },
+      { error: "Failed to process photo", details: String(error) },
       { status: 500 }
     );
   }

@@ -6,10 +6,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { photoId: string } }
+  { params }: { params: Promise<{ photoId: string }> }
 ) {
   try {
-    const photoId = params.photoId;
+    const { photoId } = await params;
 
     // Get photo from DB
     const photo = await db

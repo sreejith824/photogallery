@@ -17,31 +17,22 @@ export default function UploadPage() {
     setUploadProgress((prev) => ({ ...prev, [fileName]: 0 }));
 
     try {
-      // Step 1: Get presigned URL
-      const presignResponse = await fetch("/api/photos/presign", {
+      // Upload file to backend (which handles R2 upload)
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("filename", fileName);
+
+      const uploadResponse = await fetch("/api/photos/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: fileName,
-          contentType: file.type,
-        }),
+        body: formData,
       });
 
-      if (!presignResponse.ok) throw new Error("Failed to get presigned URL");
-      const { s3Key, presignedUrl } = await presignResponse.json();
-
-      // Step 2: Upload directly to R2
-      const uploadResponse = await fetch(presignedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-
-      if (!uploadResponse.ok) throw new Error("Failed to upload to R2");
+      if (!uploadResponse.ok) throw new Error("Failed to upload file");
+      const { s3Key } = await uploadResponse.json();
 
       setUploadProgress((prev) => ({ ...prev, [fileName]: 100 }));
 
-      // Step 3: Notify backend
+      // Notify backend to process (EXIF, geocoding, Claude tagging)
       const notifyResponse = await fetch("/api/photos/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
