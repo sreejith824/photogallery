@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Lightbox from "@/components/Lightbox";
 
 interface Photo {
   id: string;
@@ -31,6 +32,7 @@ export default function GalleryPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<{ year?: string; place?: string }>({});
   const [category, setCategory] = useState<string | null>(null);
+  const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPhotos = async () => {
@@ -64,6 +66,9 @@ export default function GalleryPage() {
   const visiblePhotos = category
     ? photos.filter((p) => p.categories?.includes(category))
     : photos;
+  // The carousel walks through what's on screen; private photos open their own page
+  const carouselPhotos = visiblePhotos.filter((p) => p.visibility !== "restricted");
+  const openIndex = carouselPhotos.findIndex((p) => p.id === openPhotoId);
 
   return (
     <div className="grain min-h-screen bg-background text-foreground">
@@ -183,6 +188,12 @@ export default function GalleryPage() {
                 href={`/photo/${photo.id}`}
                 className="develop group relative block aspect-square overflow-hidden bg-rule/40"
                 style={{ animationDelay: `${Math.min(i, 12) * 70}ms` }}
+                onClick={(e) => {
+                  // Plain clicks open the carousel; cmd/ctrl-click still opens the page
+                  if (photo.visibility === "restricted" || e.metaKey || e.ctrlKey || e.shiftKey) return;
+                  e.preventDefault();
+                  setOpenPhotoId(photo.id);
+                }}
               >
                 {photo.thumbnailKey ? (
                   <img
@@ -232,6 +243,16 @@ export default function GalleryPage() {
           </div>
         )}
       </main>
+
+      {openIndex >= 0 && (
+        <Lightbox
+          photos={carouselPhotos}
+          index={openIndex}
+          label={category ?? "All"}
+          onIndexChange={(i) => setOpenPhotoId(carouselPhotos[i].id)}
+          onClose={() => setOpenPhotoId(null)}
+        />
+      )}
 
       {/* Footer */}
       <footer className="mt-24 border-t border-rule px-5 sm:px-10 py-10">
