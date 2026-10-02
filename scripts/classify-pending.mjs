@@ -4,6 +4,7 @@
 import postgres from "postgres";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { classifyPhoto } from "../lib/classify.ts";
+import { DEFAULT_CATEGORIES, labelFromSlug } from "../lib/categories.ts";
 
 const sql = postgres(process.env.DATABASE_URL);
 const s3 = new S3Client({
@@ -14,6 +15,15 @@ const s3 = new S3Client({
     secretAccessKey: process.env.R2_SECRET_KEY,
   },
 });
+
+// Same seeding as lib/category-store.ts, in case the app hasn't run yet
+for (const [i, slug] of DEFAULT_CATEGORIES.entries()) {
+  await sql`insert into categories (slug, label, source, sort_order)
+    values (${slug}, ${labelFromSlug(slug)}, 'seed', ${i}) on conflict do nothing`;
+}
+const loadCategories = () =>
+  sql`select slug, label, source, hidden from categories order by sort_order, created_at`;
+let categories = await loadCategories();
 
 const rows = await sql`
   select id, r2_key, caption, tags from photos
@@ -26,11 +36,18 @@ for (const row of rows) {
     const res = await s3.send(
       new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: row.r2_key })
     );
-    const result = await classifyPhoto(Buffer.from(await res.Body.transformToByteArray()));
+    const result = await classifyPhoto(Buffer.from(await res.Body.transformToByteArray()), categories);
     if (!result) {
       console.log(`⊘ ${row.caption}: not classified`);
       continue;
     }
+
+    for (const slug of result.newCategories) {
+      await sql`insert into categories (slug, label, source)
+        values (${slug}, ${labelFromSlug(slug)}, 'ai') on conflict do nothing`;
+      console.log(`  + new AI category: ${slug}`);
+    }
+    if (result.newCategories.length) categories = await loadCategories();
 
     // Only replace captions that are just the uploaded file name
     const captionIsFilename = !row.caption || row.r2_key.endsWith(`_${row.caption}`);

@@ -74,6 +74,23 @@ export default function AdminPage() {
           </div>
         </Link>
 
+        {/* Categories Card */}
+        <Link href="/admin/categories">
+          <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Categories
+                </h2>
+                <p className="mt-2 text-sm text-gray-500">
+                  Add, rename, hide and merge gallery categories
+                </p>
+              </div>
+              <span className="text-3xl">🏷️</span>
+            </div>
+          </div>
+        </Link>
+
         {/* Grants Card */}
         <Link href="/admin/grants">
           <div className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer">

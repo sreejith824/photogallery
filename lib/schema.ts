@@ -9,6 +9,7 @@ import {
   jsonb,
   integer,
   index,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const photos = pgTable(
@@ -24,7 +25,7 @@ export const photos = pgTable(
     lat: text("lat"),
     lng: text("lng"),
     tags: text("tags").array().default(sql`ARRAY[]::text[]`),
-    // AI-assigned, from PHOTO_CATEGORIES in lib/classify.ts
+    // Category slugs from the categories table (AI-assigned or set by the admin)
     categories: text("categories").array().default(sql`ARRAY[]::text[]`),
     caption: text("caption"),
     visibility: varchar("visibility", { length: 50 }).default("public"),
@@ -39,6 +40,18 @@ export const photos = pgTable(
     tagsIdx: index("photos_tags_idx").on(table.tags),
   })
 );
+
+// Gallery categories. Seeded with DEFAULT_CATEGORIES (lib/categories.ts); the AI
+// can add new ones (source "ai"), which stay off the gallery until they have
+// enough photos. The admin can rename, hide, merge and delete them.
+export const categories = pgTable("categories", {
+  slug: varchar("slug", { length: 40 }).primaryKey(),
+  label: varchar("label", { length: 60 }).notNull(),
+  source: varchar("source", { length: 10 }).default("admin").notNull(), // 'seed', 'admin', 'ai'
+  hidden: boolean("hidden").default(false).notNull(),
+  sortOrder: integer("sort_order").default(100).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const albums = pgTable("albums", {
   id: uuid("id").primaryKey().defaultRandom(),

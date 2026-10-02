@@ -17,11 +17,12 @@ Photo Pond is a Next.js app for publishing a personal photo archive. Upload phot
 - Capture date from EXIF (`DateTimeOriginal` with its UTC offset)
 - GPS → "Locality, Country" via OpenStreetMap Nominatim
 - Automatic tags: year, month, locality, country
-- AI categories (nature, city, people, animals, food, documents, other), descriptive tags and a caption from Claude vision
+- AI categories, descriptive tags and a caption from Claude vision. Starts with nature, city, heritage, people, animals, food, documents, other; the AI reuses these and only creates a new category when nothing fits (shown on the gallery once 3 photos use it)
 
 **Admin** (one Google account only)
 - Upload from laptop or phone (file picker or camera), with an optional caption per photo; files go straight to storage, no size cap from the host
 - Manage photos: thumbnails, carousel preview, edit caption and categories, select-all and bulk delete
+- Manage categories: add, rename, hide, merge and delete
 - Review access requests and send magic links
 
 ## Documentation
