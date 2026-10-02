@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Lightbox from "@/components/Lightbox";
+import { PHOTO_CATEGORIES } from "@/lib/categories";
 
 interface Photo {
   id: string;
@@ -16,16 +17,8 @@ interface Photo {
   visibility: string;
 }
 
-// Display order for the AI-assigned categories (see lib/classify.ts)
-const CATEGORY_ORDER = [
-  "nature",
-  "city",
-  "people",
-  "animals",
-  "food",
-  "documents",
-  "other",
-];
+// Display order for the categories
+const CATEGORY_ORDER = PHOTO_CATEGORIES;
 
 export default function GalleryPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);

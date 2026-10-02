@@ -1,18 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 
-// Fixed set so the gallery sections stay stable. Keep in sync with the UI labels.
-export const PHOTO_CATEGORIES = [
-  "nature",
-  "city",
-  "people",
-  "animals",
-  "food",
-  "documents",
-  "other",
-] as const;
+import { PHOTO_CATEGORIES, isPhotoCategory, type PhotoCategory } from "./categories.ts";
 
-export type PhotoCategory = (typeof PHOTO_CATEGORIES)[number];
+export { PHOTO_CATEGORIES, type PhotoCategory };
 
 export interface Classification {
   categories: PhotoCategory[];
@@ -108,9 +99,7 @@ export async function classifyPhoto(buffer: Buffer): Promise<Classification | nu
 
   try {
     const parsed = toolUse.input as Classification;
-    const categories = parsed.categories.filter((c): c is PhotoCategory =>
-      (PHOTO_CATEGORIES as readonly string[]).includes(c)
-    );
+    const categories = parsed.categories.filter(isPhotoCategory);
     return {
       categories: categories.length ? [...new Set(categories)] : ["other"],
       tags: parsed.tags.map((t) => t.trim()).filter(Boolean).slice(0, 6),

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Lightbox from "@/components/Lightbox";
+import EditPhotoDialog from "@/components/EditPhotoDialog";
 
 interface Photo {
   id: string;
@@ -13,6 +14,7 @@ interface Photo {
   takenAt: string | null;
   place: string | null;
   thumbnailKey: string | null;
+  categories: string[] | null;
 }
 
 export default function AdminPhotosPage() {
@@ -22,10 +24,12 @@ export default function AdminPhotosPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const allSelected = photos.length > 0 && selected.size === photos.length;
   const previewIndex = photos.findIndex((p) => p.id === previewId);
+  const editingPhoto = photos.find((p) => p.id === editingId);
 
   // Show the header checkbox as "partly selected" when only some rows are ticked
   useEffect(() => {
@@ -174,6 +178,7 @@ export default function AdminPhotosPage() {
                   </th>
                   <th className="w-20 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Caption</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categories</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Visibility</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -222,6 +227,22 @@ export default function AdminPhotosPage() {
                         {photo.caption || "(Untitled)"}
                       </button>
                     </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1">
+                        {photo.categories?.length ? (
+                          photo.categories.map((c) => (
+                            <span
+                              key={c}
+                              className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-700"
+                            >
+                              {c}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-gray-400">None</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                         photo.visibility === "public"
@@ -234,7 +255,13 @@ export default function AdminPhotosPage() {
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {new Date(photo.uploadedAt).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 text-right text-sm">
+                    <td className="px-6 py-4 text-right text-sm whitespace-nowrap">
+                      <button
+                        onClick={() => setEditingId(photo.id)}
+                        className="mr-4 text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Edit
+                      </button>
                       <button
                         onClick={() => handleDelete(photo.id)}
                         disabled={deleting === photo.id}
@@ -250,6 +277,23 @@ export default function AdminPhotosPage() {
           </div>
         )}
       </div>
+
+      {editingPhoto && (
+        <EditPhotoDialog
+          photo={editingPhoto}
+          onClose={() => setEditingId(null)}
+          onSaved={(saved) => {
+            setPhotos((prev) =>
+              prev.map((p) =>
+                p.id === saved.id
+                  ? { ...p, caption: saved.caption, categories: saved.categories }
+                  : p
+              )
+            );
+            setEditingId(null);
+          }}
+        />
+      )}
 
       {previewIndex >= 0 && (
         <Lightbox
