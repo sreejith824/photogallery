@@ -5,14 +5,16 @@ What Photo Pond is built with, where each piece lives in the code, and why it wa
 ## Overview
 
 ```
-Browser ──► Vercel (Next.js app + API routes) ──► Neon Postgres   (metadata)
-   │                    │
-   │                    ├──► Anthropic Claude  (categories, tags, captions)
-   │                    ├──► Nominatim (OSM)   (GPS → place name)
-   │                    ├──► Resend            (access-request emails)
-   │                    └──► Google OAuth      (admin sign-in)
+Browser ──► Vercel CDN ──► Next.js app + API routes (Vercel functions)
+   │        (cached GETs)        │
+   │                             ├──► Neon Postgres     (metadata)
+   │                             ├──► Anthropic Claude  (categories, tags, captions)
+   │                             ├──► Nominatim (OSM)   (GPS → place name)
+   │                             ├──► Upstash Redis     (rate limits for public forms)
+   │                             ├──► Resend            (access-request emails)
+   │                             └──► Google OAuth      (admin sign-in)
    │
-   └── presigned PUT/GET ──► Cloudflare R2     (original photos + thumbnails)
+   └── presigned PUT/GET ──► Cloudflare R2  (original photos + thumbnails)
 ```
 
 Photos never pass through a Vercel function on the way in: the browser uploads straight to R2 with a presigned URL, then asks the server to process the stored file.
@@ -80,6 +82,59 @@ Categories are dynamic, stored in the `categories` table:
 4. **After the response** (`after()`), Claude classifies a 1024px copy via a strict tool call: categories, 3–6 tags, and a caption (only used if you didn't write one).
 
 Photos that fail classification keep `tags_pending = 1` and can be retried with `scripts/classify-pending.mjs`.
+
+## Caching & traffic protection
+
+Two separate mechanisms, used by different requests:
+
+- **Vercel CDN** caches what visitors *read* (public `GET` responses), driven by the `Cache-Control` headers the route handlers set.
+- **Upstash Redis** counts requests to the two public *forms* for rate limiting. It never stores pages or photos.
+
+### What the CDN caches
+
+| Endpoint | Content | CDN (`s-maxage`) | Browser (`max-age`) | Then |
+|---|---|---|---|---|
+| `/api/photos/[id]/thumbnail` | 400×400 WebP thumbnail (bytes) | 7 days | 1 day | `stale-while-revalidate` 1 day |
+| `/api/photos` | Gallery list: photo data (captions, dates, places, categories), no images | 60 s | — | `stale-while-revalidate` 5 min |
+| `/api/categories` | Category list for the tabs | 60 s | — | `stale-while-revalidate` 5 min |
+| `/api/photos/[id]` (public photos) | Photo details + a 24 h presigned link to the full image | 1 hour | — | `stale-while-revalidate` 10 min |
+| `/api/photos/[id]` (restricted photos) | — | never (`private, no-store`) | never | — |
+| `/api/admin/*`, auth, uploads | — | never | never | — |
+
+**Full-size photos are not cached by Vercel.** The browser downloads them directly from Cloudflare R2 using the presigned link from `/api/photos/[id]`; R2 has no egress fees. Caching that JSON for an hour is safe because the link inside stays valid for 24 hours.
+
+**How a request flows:**
+
+```
+Visitor ─► Vercel CDN ──hit──► cached response (no function, no DB, no R2)
+               │
+              miss (first request per region, or TTL expired)
+               ▼
+         Route handler ─► Neon / R2 ─► response + Cache-Control ─► stored at the CDN
+```
+
+The cache is per Vercel region: the first visitor in each region causes one miss. With `stale-while-revalidate`, an expired entry is still served immediately while the CDN refreshes it in the background.
+
+**Trade-offs:**
+
+- New uploads and edits appear on the public gallery within about a minute (the `/api/photos` TTL). The admin pages use the uncached `/api/admin/photos`, so they always show the current state.
+- Thumbnail keys are unique per upload and never change, so long caching is safe. A deleted photo's thumbnail can stay reachable at its URL until the CDN copy expires (up to 7 days).
+- Nothing purges the CDN on edits; entries simply expire. If instant updates ever matter, add a Vercel cache purge on admin edits.
+
+### Rate limits (Upstash)
+
+Defined in `lib/ratelimit.ts` (sliding windows, one Redis command per request):
+
+| Endpoint | Limit | Protects |
+|---|---|---|
+| `POST /api/access-requests` | 5 / hour per IP, 3 / day per email + photo | Database, admin inbox, Resend's 100 emails/day |
+| `POST /api/share/validate` | 20 / minute per IP | Magic-link token guessing |
+
+Over the limit returns `429` with `Retry-After`. If the Upstash variables are missing or Redis errors, requests are allowed (fail open). Admin endpoints aren't rate limited; they require the admin's Google login.
+
+### Platform protection
+
+Vercel's automatic DDoS mitigation sits in front of everything on all plans, and Attack Mode / WAF custom rules are available in the Vercel dashboard. See [SETUP.md → Costs & Limits](../SETUP.md#costs--limits) for how this maps to the free-tier allowances.
 
 ## Front end
 
