@@ -21,6 +21,7 @@ Photo Pond is a Next.js app for publishing a personal photo archive. Upload phot
 
 **Admin** (one Google account only)
 - Upload from laptop or phone (file picker or camera), with an optional caption per photo; files go straight to storage, no size cap from the host
+- Duplicate detection: exact copies are skipped before upload; lookalikes (resized copies, burst shots) reuse the existing photo's classification instead of another AI call
 - Manage photos: thumbnails, carousel preview, edit caption and categories, select-all and bulk delete
 - Manage categories: add, rename, hide, merge and delete
 - Review access requests and send magic links
