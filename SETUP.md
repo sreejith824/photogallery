@@ -6,13 +6,16 @@ Complete configuration guide for all SaaS platforms and services used in this pr
 
 | Service | Purpose | Cost | Setup Time |
 |---------|---------|------|-----------|
-| **Neon** | PostgreSQL Database | Free tier (unlimited) | 5 min |
-| **Cloudflare R2** | Photo Storage | Free tier (10GB, zero egress) | 5 min |
+| **Neon** | PostgreSQL Database | Free tier (1 GB, 100 CU-hours/month) | 5 min |
+| **Cloudflare R2** | Photo Storage | Free tier (10 GB, zero egress) | 5 min |
 | **Google Cloud** | OAuth Authentication | Free | 10 min |
-| **Vercel** | Hosting & Deployment | Free tier | 5 min |
-| **Resend** | Email Delivery | Free tier (generous) | 5 min |
-| **Anthropic** | AI Auto-tagging | Pay-per-use (~cents) | 5 min |
-| **Upstash Redis** | Rate Limiting | Free tier | 5 min |
+| **Vercel** | Hosting & Deployment | Hobby (free, non-commercial) | 5 min |
+| **Resend** | Email Delivery | Free tier (3,000/month, 100/day) | 5 min |
+| **Anthropic** | AI categories, tags, captions | Pay-per-use (~$0.01/photo) | 5 min |
+| **Nominatim (OSM)** | GPS → place name | Free public API (1 req/s) | none |
+| **Upstash Redis** | Rate Limiting (configured, not used in code yet) | Free tier | 5 min |
+
+See [Costs & Limits](#costs--limits) for what each free tier allows and which limit you'll hit first.
 
 ---
 
@@ -195,9 +198,10 @@ For production (Vercel), set `NEXTAUTH_URL` to your actual domain.
 
 ### Cost
 
-- Per-image: ~$0.01 (rough estimate based on image size + tokens used)
-- 1,000 photos = ~$10
-- Free tier or paid account both work
+- Model: Claude Opus 5.5 ($4 / $20 per million input / output tokens)
+- Per photo: ~$0.01 (photo is downscaled to 1024px first, ~1,500 input tokens + a short tool call)
+- 1,000 photos ≈ $10. Needs prepaid credit; without it uploads still work but photos stay uncategorised
+- Local dev can use a gateway instead of a personal key: the SDK reads `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` from the environment
 
 ### How It's Used
 
@@ -348,6 +352,8 @@ Before your first production deploy:
 
 ### Photo Upload Fails
 - Check R2 credentials in `.env.local`
+- Browser console shows a CORS error on the R2 `PUT`: the bucket CORS rule must allow your site's origin (see [Costs & Limits → Cloudflare R2](#costs--limits))
+- 401 from `/api/photos/presign`: you're not signed in as `ADMIN_EMAIL` (only that Google account can sign in)
 - Check Vercel Build Command includes `npm run db:migrate`
 - Check Anthropic API key is valid (Claude tagging runs in background)
 
@@ -368,18 +374,87 @@ Before your first production deploy:
 
 ---
 
-## Cost Summary (Monthly)
+## Costs & Limits
 
-| Service | Cost |
-|---------|------|
-| Neon | Free (free tier) |
-| Cloudflare R2 | Free (free tier, zero egress) |
-| Google OAuth | Free |
-| Vercel | Free (free tier) |
-| Resend | Free (free tier, up to 100 emails/day) |
-| Anthropic | ~$0-5 (pay-per-use, ~$0.01/photo) |
-| Upstash Redis | Free (free tier) |
-| **Total** | **~$0-5/month** |
+_Limits checked 2 October 2026 against each provider's pricing/limits page (linked below). Providers change free tiers, so re-check before relying on a number._
+
+### Monthly cost
+
+| Service | Plan | Cost |
+|---|---|---|
+| Vercel | Hobby | $0 |
+| Neon | Free | $0 |
+| Cloudflare R2 | Free tier | $0 up to 10 GB stored |
+| Anthropic | Pay-as-you-go | ~$0.01 per uploaded photo |
+| Resend | Free | $0 |
+| Nominatim | Public API | $0 |
+| Google OAuth | — | $0 |
+| GitHub | Free | $0 |
+| Upstash Redis | Free (unused) | $0 |
+| Domain (`techforlife.in`, GoDaddy) | — | Renewal only |
+| **Total** | | **~$0 + ~$1 per 100 uploads** |
+
+### Limits per service and what they mean here
+
+**Vercel Hobby** — [limits](https://vercel.com/docs/limits) · [functions](https://vercel.com/docs/functions/limitations) · [fair use](https://vercel.com/docs/limits/fair-use-guidelines)
+
+| Limit | Hobby | Impact on Photo Pond |
+|---|---|---|
+| Function memory / CPU | 2 GB / 1 vCPU | Enough for `sharp` thumbnailing |
+| Function max duration | 300 s | Upload processing sets `maxDuration = 60` |
+| **Request / response body** | **4.5 MB** | Why uploads go **browser → R2 directly** via presigned URL, never through a function |
+| Function invocations | 1M / month | Each gallery thumbnail is one call (redirect to R2): ~10k views/month of a 100-photo gallery |
+| Active CPU | 4 h / month | ~1–2 s per upload → several thousand uploads/month |
+| Provisioned memory | 360 GB-hours / month | Not a concern at this scale |
+| Fast Data Transfer / Origin Transfer | 100 GB / 10 GB per month | Full-size images are served from R2, not Vercel |
+| Deployments | 100 / day | — |
+| Commercial use | **Not allowed** | Personal use only; Pro ($20/month) needed for anything commercial |
+
+**Neon Free** — [pricing](https://neon.com/pricing)
+
+| Limit | Free | Impact |
+|---|---|---|
+| Storage | 1 GB per project | ~1 KB per photo row → hundreds of thousands of photos |
+| Compute | 100 CU-hours / month, up to 2 CU | Plenty for a personal gallery |
+| Scale to zero | After 5 min idle (can't disable) | First request after idle is ~0.5–1 s slower |
+| Egress | 5 GB / month | — |
+| Restore window | 6 hours | Take your own backups for anything older |
+
+Next step up: Launch, pay-as-you-go ($0.106/CU-hour, $0.35/GB-month).
+
+**Cloudflare R2** — [pricing](https://developers.cloudflare.com/r2/pricing/)
+
+| Limit | Free per month | Beyond free |
+|---|---|---|
+| Storage | 10 GB | $0.015 / GB-month |
+| Class A (writes) | 1M | $4.50 / million |
+| Class B (reads) | 10M | $0.36 / million |
+| Egress | Always free | Always free |
+
+**This is the first limit you'll hit.** Originals are ~1.5–5 MB, so 10 GB ≈ 2,500–4,000 photos. After that it's cheap: 50 GB ≈ $0.60/month. Each upload uses 2 writes (original + thumbnail), each view 1 read.
+
+Direct uploads need a CORS rule on the bucket allowing `PUT` with header `content-type` from `https://photopond.techforlife.in` and `http://localhost:3000`. Vercel preview URLs are not in the list, so uploads from preview deployments fail.
+
+**Anthropic** — Claude Opus 5.5, $4 / $20 per million input / output tokens. ~$0.01 per photo, ~$10 per 1,000. Switching to Claude Haiku 4.5 would cut that to roughly a quarter with slightly less detailed tags (one-line change in `lib/classify.ts`).
+
+**Resend Free** — [pricing](https://resend.com/pricing): 3,000 emails/month, 100/day, 3 domains, 30-day logs. Only access requests send email. Pro is $20/month for 50k.
+
+**Nominatim** — [usage policy](https://operations.osmfoundation.org/policies/nominatim/): max 1 request/second, identifying User-Agent required, results should be cached, no heavy bulk geocoding. Photo Pond complies by:
+- sending a `photogallery/1.0` User-Agent
+- processing uploads one at a time from the upload page
+- spacing Nominatim calls ≥1.1 s apart on the server
+- reusing the place of an existing photo taken within ~100 m instead of calling Nominatim
+
+**Upstash Redis Free** — [pricing](https://upstash.com/pricing/redis): 500K commands/month, 256 MB. Installed and configured but not called by the code yet; either wire up rate limiting or remove it.
+
+### When to upgrade
+
+| Trigger | Action | Rough cost |
+|---|---|---|
+| R2 storage passes 10 GB | Nothing to change, pay overage | ~$0.015/GB-month |
+| Site becomes commercial | Vercel Pro | $20/month |
+| Many uploads per month | Anthropic credit top-ups, or switch to Haiku | ~$10 / 1,000 photos (Opus) |
+| Need longer DB restore window | Neon Launch | Usage-based, typically a few $/month |
 
 ---
 
