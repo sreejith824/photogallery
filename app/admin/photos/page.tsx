@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Lightbox from "@/components/Lightbox";
 import EditPhotoDialog from "@/components/EditPhotoDialog";
@@ -25,6 +25,11 @@ export default function AdminPhotosPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Cursor being fetched; a ref so two callers in the same tick don't double-load
+  const inFlightCursor = useRef<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const allSelected = photos.length > 0 && selected.size === photos.length;
@@ -57,7 +62,9 @@ export default function AdminPhotosPage() {
         const response = await fetch("/api/admin/photos");
         if (!response.ok) throw new Error("Failed to fetch photos");
         const data = await response.json();
-        setPhotos(data);
+        setPhotos(data.photos);
+        setNextCursor(data.nextCursor);
+        setTotal(data.total ?? data.photos.length);
       } catch (error) {
         console.error("Error fetching photos:", error);
       } finally {
@@ -67,6 +74,27 @@ export default function AdminPhotosPage() {
 
     fetchPhotos();
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || inFlightCursor.current === nextCursor) return;
+    inFlightCursor.current = nextCursor;
+    setLoadingMore(true);
+    try {
+      const response = await fetch(`/api/admin/photos?cursor=${encodeURIComponent(nextCursor)}`);
+      if (!response.ok) throw new Error("Failed to fetch photos");
+      const data = await response.json();
+      setPhotos((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...data.photos.filter((p: Photo) => !seen.has(p.id))];
+      });
+      setNextCursor(data.nextCursor);
+    } catch (error) {
+      console.error("Error loading more photos:", error);
+    } finally {
+      inFlightCursor.current = null;
+      setLoadingMore(false);
+    }
+  }, [nextCursor]);
 
   const handleDelete = async (photoId: string) => {
     if (!confirm("Delete this photo? This cannot be undone.")) return;
@@ -80,6 +108,7 @@ export default function AdminPhotosPage() {
       if (!response.ok) throw new Error("Failed to delete");
 
       setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+      setTotal((t) => t - 1);
       setSelected((prev) => {
         const next = new Set(prev);
         next.delete(photoId);
@@ -110,6 +139,7 @@ export default function AdminPhotosPage() {
       results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []))
     );
     setPhotos((prev) => prev.filter((p) => !deleted.has(p.id)));
+    setTotal((t) => t - deleted.size);
     // Keep failed ones selected so they can be retried
     setSelected((prev) => new Set([...prev].filter((id) => !deleted.has(id))));
     setBulkDeleting(false);
@@ -152,8 +182,10 @@ export default function AdminPhotosPage() {
             <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200">
               <span className="text-sm text-gray-600">
                 {selected.size > 0
-                  ? `${selected.size} of ${photos.length} selected`
-                  : `${photos.length} photos`}
+                  ? `${selected.size} of ${photos.length} loaded selected`
+                  : photos.length < total
+                    ? `Showing ${photos.length} of ${total} photos`
+                    : `${total} photos`}
               </span>
               <button
                 onClick={handleBulkDelete}
@@ -274,6 +306,17 @@ export default function AdminPhotosPage() {
                 ))}
               </tbody>
             </table>
+            {nextCursor && (
+              <div className="flex justify-center border-t border-gray-200 py-4">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:text-gray-400"
+                >
+                  {loadingMore ? "Loading..." : `Load more (${total - photos.length} remaining)`}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -300,6 +343,9 @@ export default function AdminPhotosPage() {
           photos={photos}
           index={previewIndex}
           label="Manage"
+          hasMore={Boolean(nextCursor)}
+          onNeedMore={loadMore}
+          total={total}
           onIndexChange={(i) => setPreviewId(photos[i].id)}
           onClose={() => setPreviewId(null)}
         />

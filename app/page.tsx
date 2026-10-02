@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Lightbox from "@/components/Lightbox";
 import { isCategoryVisible, labelFromSlug, type Category } from "@/lib/categories";
@@ -17,13 +17,41 @@ interface Photo {
   visibility: string;
 }
 
+interface PhotoPage {
+  photos: Photo[];
+  nextCursor: string | null;
+  total?: number;
+  categoryCounts?: Record<string, number>;
+}
+
+// Everything loaded for one query (filters + category). Keyed so responses for
+// an older query are ignored.
+interface GalleryResult {
+  key: string;
+  photos: Photo[];
+  nextCursor: string | null;
+  total: number;
+  categoryCounts: Record<string, number>;
+}
+
 export default function GalleryPage() {
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<{ year?: string; place?: string }>({});
   const [category, setCategory] = useState<string | null>(null);
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const [categoryList, setCategoryList] = useState<Category[]>([]);
+  const [result, setResult] = useState<GalleryResult | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // Cursor currently being fetched. A ref, so callers firing in the same tick
+  // (scroll observer + carousel) don't fetch the same page twice.
+  const inFlightCursor = useRef<string | null>(null);
+
+  const params = new URLSearchParams();
+  if (filter.year) params.set("year", filter.year);
+  if (filter.place) params.set("place", filter.place);
+  if (category) params.set("category", category);
+  const queryKey = params.toString();
+  const queryKeyRef = useRef(queryKey);
 
   // Categories come from the database (seeded, admin-made or AI-made)
   useEffect(() => {
@@ -33,45 +61,92 @@ export default function GalleryPage() {
       .catch(() => setCategoryList([]));
   }, []);
 
+  // First page whenever the filters or category change
   useEffect(() => {
-    const fetchPhotos = async () => {
-      try {
-        const params = new URLSearchParams();
-        if (filter.year) params.append("year", filter.year);
-        if (filter.place) params.append("place", filter.place);
-
-        const response = await fetch(`/api/photos?${params.toString()}`);
-        if (!response.ok) throw new Error("Failed to fetch photos");
-
-        const data = await response.json();
-        setPhotos(data);
-      } catch (error) {
+    queryKeyRef.current = queryKey;
+    fetch(`/api/photos?${queryKey}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to fetch photos");
+        return r.json() as Promise<PhotoPage>;
+      })
+      .then((page) => ({
+        key: queryKey,
+        photos: page.photos,
+        nextCursor: page.nextCursor,
+        total: page.total ?? page.photos.length,
+        categoryCounts: page.categoryCounts ?? {},
+      }))
+      .catch((error) => {
         console.error("Failed to fetch photos:", error);
-        setPhotos([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+        return { key: queryKey, photos: [], nextCursor: null, total: 0, categoryCounts: {} };
+      })
+      .then((next) => {
+        if (queryKeyRef.current === next.key) setResult(next);
+      });
+  }, [queryKey]);
 
-    fetchPhotos();
-  }, [filter]);
+  const current = result?.key === queryKey ? result : null;
+  const loading = !current;
+  const nextCursor = current?.nextCursor ?? null;
 
+  const loadMore = useCallback(async () => {
+    if (!current?.nextCursor || inFlightCursor.current === current.nextCursor) return;
+    inFlightCursor.current = current.nextCursor;
+    setLoadingMore(true);
+    try {
+      const query = new URLSearchParams(current.key);
+      query.set("cursor", current.nextCursor);
+      const response = await fetch(`/api/photos?${query.toString()}`);
+      if (!response.ok) throw new Error("Failed to fetch photos");
+      const page: PhotoPage = await response.json();
+      setResult((prev) => {
+        if (!prev || prev.key !== current.key) return prev;
+        const seen = new Set(prev.photos.map((p) => p.id));
+        return {
+          ...prev,
+          photos: [...prev.photos, ...page.photos.filter((p) => !seen.has(p.id))],
+          nextCursor: page.nextCursor,
+        };
+      });
+    } catch (error) {
+      console.error("Failed to load more photos:", error);
+    } finally {
+      inFlightCursor.current = null;
+      setLoadingMore(false);
+    }
+  }, [current]);
+
+  // Infinite scroll: load the next page when the end of the grid comes into view
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !nextCursor) return;
+    const observer = new IntersectionObserver(
+      (entries) => entries[0]?.isIntersecting && loadMore(),
+      { rootMargin: "800px 0px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [nextCursor, loadMore]);
+
+  const photos = current?.photos ?? [];
+  const counts = current?.categoryCounts ?? {};
   const hasFilter = Boolean(filter.year || filter.place);
 
   const categoryCounts = categoryList
     .map((c) => ({
       name: c.slug,
       label: c.label,
-      count: photos.filter((p) => p.categories?.includes(c.slug)).length,
+      count: counts[c.slug] ?? 0,
       category: c,
     }))
     .filter((c) => isCategoryVisible(c.category, c.count));
   const categoryLabel = category
     ? (categoryList.find((c) => c.slug === category)?.label ?? labelFromSlug(category))
     : "All";
-  const visiblePhotos = category
-    ? photos.filter((p) => p.categories?.includes(category))
-    : photos;
+  // Photos matching the current view across all pages (not just those loaded)
+  const frameCount = category ? (counts[category] ?? 0) : (current?.total ?? 0);
+  // The server already filtered by category
+  const visiblePhotos = photos;
   // The carousel walks through what's on screen; private photos open their own page
   const carouselPhotos = visiblePhotos.filter((p) => p.visibility !== "restricted");
   const openIndex = carouselPhotos.findIndex((p) => p.id === openPhotoId);
@@ -101,7 +176,7 @@ export default function GalleryPage() {
             kept slowly.
           </p>
           <p className="rise font-mono text-[11px] uppercase tracking-[0.2em] text-muted [animation-delay:400ms]">
-            {loading ? "—" : String(visiblePhotos.length).padStart(3, "0")} frames
+            {loading ? "—" : String(frameCount).padStart(3, "0")} frames
           </p>
         </div>
       </header>
@@ -109,7 +184,7 @@ export default function GalleryPage() {
       {/* Categories */}
       {categoryCounts.length > 0 && (
         <nav className="rise flex flex-wrap items-baseline gap-x-7 gap-y-2 px-5 sm:px-10 pb-8 [animation-delay:450ms]">
-          {[{ name: null, label: "All", count: photos.length }, ...categoryCounts].map((c) => {
+          {[{ name: null, label: "All", count: current?.total ?? 0 }, ...categoryCounts].map((c) => {
             const active = category === c.name;
             return (
               <button
@@ -248,6 +323,19 @@ export default function GalleryPage() {
             ))}
           </div>
         )}
+        {/* Infinite scroll trigger, with a button in case the observer doesn't fire */}
+        <div ref={sentinelRef} />
+        {nextCursor && (
+          <div className="flex justify-center py-10">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted hover:text-foreground disabled:opacity-50"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        )}
       </main>
 
       {openIndex >= 0 && (
@@ -257,6 +345,9 @@ export default function GalleryPage() {
           label={categoryLabel}
           onIndexChange={(i) => setOpenPhotoId(carouselPhotos[i].id)}
           onClose={() => setOpenPhotoId(null)}
+          hasMore={Boolean(nextCursor)}
+          onNeedMore={loadMore}
+          total={frameCount}
         />
       )}
 

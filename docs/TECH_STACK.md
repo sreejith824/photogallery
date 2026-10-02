@@ -88,6 +88,17 @@ Categories are dynamic, stored in the `categories` table:
 
 Photos that fail classification keep `tags_pending = 1` and can be retried with `scripts/classify-pending.mjs`.
 
+## Pagination
+
+Both photo lists use keyset (cursor) pagination, so pages stay correct while photos are added or deleted:
+
+| Endpoint | Order | Page size | Extras on the first page |
+|---|---|---|---|
+| `GET /api/photos?year&place&category&cursor&limit` | Capture date (else upload date), newest first | 24 (max 100) | `total` and `categoryCounts` for the year/place filter, used by the tabs and frame count |
+| `GET /api/admin/photos?cursor&limit` | Upload date, newest first | 50 | `total` |
+
+Responses are `{ photos, nextCursor }`; `nextCursor` is `null` on the last page. The cursor encodes the last row's sort key (exact Postgres timestamp text) and id (`lib/pagination.ts`). The gallery loads the next page as you scroll (with a "Load more" fallback), and the carousel fetches it when you near the end; Manage Photos has a "Load more" button, and select-all applies to the loaded rows.
+
 ## Caching & traffic protection
 
 Two separate mechanisms, used by different requests:
@@ -145,8 +156,8 @@ Vercel's automatic DDoS mitigation sits in front of everything on all plans, and
 
 | Page | File | Notes |
 |---|---|---|
-| Gallery | `app/page.tsx` | Masthead, category tabs (only non-empty), year/place filters, edge-to-edge grid |
-| Carousel | `components/Lightbox.tsx` | Keyboard/swipe, filmstrip, preloads neighbours; walks the current category/filter |
+| Gallery | `app/page.tsx` | Masthead, category tabs (only non-empty), year/place filters, edge-to-edge grid with infinite scroll (24 per page, newest first) |
+| Carousel | `components/Lightbox.tsx` | Keyboard/swipe, filmstrip, preloads neighbours; walks the current category/filter and loads the next page near the end |
 | Photo page | `app/photo/[photoId]/page.tsx` | Full image + metadata, or request-access form for restricted photos |
 | Admin | `app/admin/*` | Upload with captions, manage (thumbnails, preview, edit caption/categories, bulk delete), categories, access requests |
 
