@@ -16,6 +16,9 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [items, setItems] = useState<UploadItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Separate input with `capture`: on phones that attribute forces the camera,
+  // so it must not be on the regular file picker
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Release preview object URLs when the page unmounts
   const itemsRef = useRef(items);
@@ -155,6 +158,13 @@ export default function UploadPage() {
             type="file"
             multiple
             accept="image/*"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
             capture="environment"
             onChange={handleFileSelect}
             className="hidden"
@@ -166,7 +176,7 @@ export default function UploadPage() {
             Select Files
           </button>
           <button
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => cameraInputRef.current?.click()}
             className="mt-2 ml-2 inline-block bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 md:hidden"
           >
             📷 Take Photo
