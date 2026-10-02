@@ -1,13 +1,18 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/index";
 import { photos } from "@/lib/schema";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { eq } from "drizzle-orm";
 import { uploadFile } from "@/lib/r2";
+import { getCaptureDate, buildAutoTags, type CaptureDate } from "@/lib/exif";
+import { classifyPhoto } from "@/lib/classify";
 import sharp from "sharp";
 import * as exifr from "exifr";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 
 export const runtime = "nodejs";
+// Leaves room for the background classification call in after()
+export const maxDuration = 60;
 
 const s3Client = new S3Client({
   region: "auto",
@@ -27,19 +32,35 @@ async function getFileFromR2(key: string): Promise<Buffer> {
   return Buffer.from(await response.Body!.transformToByteArray());
 }
 
-async function reverseGeocode(
-  lat: number,
-  lng: number
-): Promise<string | null> {
+interface GeocodeResult {
+  place: string | null;
+  locality: string | null;
+  country: string | null;
+}
+
+async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> {
+  const empty = { place: null, locality: null, country: null };
   try {
+    // Nominatim rejects requests without an identifying User-Agent (403)
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&accept-language=en`,
+      { headers: { "User-Agent": "photogallery/1.0 (personal photo gallery)" } }
     );
+    if (!response.ok) {
+      console.error("Geocoding failed:", response.status);
+      return empty;
+    }
     const data = await response.json();
-    return data.address?.city || data.address?.town || null;
+    const a = data.address || {};
+    // Rural spots often have no city/town, so fall back to smaller/larger units
+    const locality: string | null =
+      a.city || a.town || a.village || a.hamlet || a.municipality || a.county || null;
+    const country: string | null = a.country || null;
+    const place = [locality, country].filter(Boolean).join(", ") || null;
+    return { place, locality, country };
   } catch (error) {
     console.error("Geocoding error:", error);
-    return null;
+    return empty;
   }
 }
 
@@ -51,7 +72,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { s3Key, filename } = await request.json();
+    const { s3Key, filename, caption: rawCaption } = await request.json();
+    const caption =
+      typeof rawCaption === "string" && rawCaption.trim()
+        ? rawCaption.trim().slice(0, 500)
+        : filename;
 
     if (!s3Key) {
       return NextResponse.json(
@@ -68,6 +93,7 @@ export async function POST(request: NextRequest) {
     // Extract EXIF data
     let exifData: any = {};
     let takenAt: Date | null = null;
+    let capture: CaptureDate | null = null;
     let lat: string | null = null;
     let lng: string | null = null;
 
@@ -76,11 +102,12 @@ export async function POST(request: NextRequest) {
       const tags = await exifr.parse(buffer);
       if (tags) {
         exifData = tags;
-        if (tags.DateTime) {
-          takenAt = new Date(tags.DateTime);
-          console.log("✓ EXIF DateTime found:", takenAt);
+        capture = await getCaptureDate(buffer);
+        takenAt = capture?.takenAt ?? null;
+        if (takenAt) {
+          console.log("✓ EXIF capture date found:", takenAt);
         } else {
-          console.log("⊘ No DateTime in EXIF, using uploadedAt as fallback");
+          console.log("⊘ No capture date in EXIF, using uploadedAt as fallback");
           takenAt = new Date();
         }
         if (tags.latitude && tags.longitude) {
@@ -97,10 +124,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Reverse geocode if we have GPS data
-    let place: string | null = null;
+    let geo: GeocodeResult = { place: null, locality: null, country: null };
     if (lat && lng) {
-      place = await reverseGeocode(parseFloat(lat), parseFloat(lng));
+      geo = await reverseGeocode(parseFloat(lat), parseFloat(lng));
     }
+    const place = geo.place;
+    const tags = buildAutoTags(capture, geo.locality, geo.country);
 
     // Generate thumbnail
     let thumbnailKey: string | null = null;
@@ -141,7 +170,8 @@ export async function POST(request: NextRequest) {
         place,
         lat,
         lng,
-        caption: filename,
+        tags,
+        caption,
         visibility: "public",
         width,
         height,
@@ -150,6 +180,28 @@ export async function POST(request: NextRequest) {
       .returning();
 
     const createdPhoto = insertResult[0];
+    const hasUserCaption = caption !== filename;
+
+    // Classify with Claude after the response is sent, so uploads stay fast
+    after(async () => {
+      try {
+        const result = await classifyPhoto(buffer);
+        if (!result) return;
+        await db
+          .update(photos)
+          .set({
+            categories: result.categories,
+            tags: [...new Set([...tags, ...result.tags])],
+            ...(hasUserCaption ? {} : { caption: result.caption }),
+            tagsPending: 0,
+          })
+          .where(eq(photos.id, createdPhoto.id));
+        console.log("✓ Classified", createdPhoto.id, result.categories);
+      } catch (error) {
+        // tagsPending stays 1, so the photo can be retried by the backfill script
+        console.error("✗ Classification error:", error);
+      }
+    });
 
     return NextResponse.json({
       id: createdPhoto.id,

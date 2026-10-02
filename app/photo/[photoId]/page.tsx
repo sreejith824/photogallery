@@ -46,20 +46,24 @@ export default function PhotoDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
+      <div className="grain min-h-screen bg-background flex items-center justify-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted animate-pulse">
+          Developing…
+        </p>
       </div>
     );
   }
 
   if (error || !photo) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="grain min-h-screen bg-background flex items-center justify-center px-6">
         <div className="text-center">
-          <p className="text-red-600 mb-4">{error || "Photo not found"}</p>
+          <p className="font-display text-5xl italic mb-6">
+            {error || "Photo not found"}
+          </p>
           <button
             onClick={() => router.back()}
-            className="text-blue-600 hover:text-blue-700"
+            className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent hover:underline underline-offset-4"
           >
             ← Back
           </button>
@@ -68,93 +72,97 @@ export default function PhotoDetailPage() {
     );
   }
 
+  const takenAt =
+    photo.takenAt &&
+    new Date(photo.takenAt).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="grain min-h-screen bg-background text-foreground">
       {/* Header */}
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <button
-            onClick={() => router.back()}
-            className="text-blue-600 hover:text-blue-700"
-          >
-            ← Back to gallery
-          </button>
-        </div>
+      <nav className="flex items-center justify-between px-5 sm:px-10 py-6 font-mono text-[11px] uppercase tracking-[0.2em]">
+        <button
+          onClick={() => router.back()}
+          className="group flex items-center gap-2"
+        >
+          <span className="transition-transform duration-300 group-hover:-translate-x-1">
+            ←
+          </span>
+          Back to gallery
+        </button>
+        <span className="text-muted">Photo Pond</span>
       </nav>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {photo.visibility === "restricted" ? (
-          <div className="bg-white rounded-lg shadow p-8">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                🔒 This photo is restricted
-              </h1>
-              <p className="text-gray-600 mb-6">
-                To view this photo, please request access from the owner.
-              </p>
-              <RequestAccessForm photoId={photoId} />
-            </div>
+      {photo.visibility === "restricted" ? (
+        <main className="mx-auto grid max-w-6xl gap-12 px-5 sm:px-10 py-12 md:grid-cols-[1.1fr_1fr] md:py-20">
+          <div className="rise">
+            <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
+              Private frame
+            </p>
+            <h1 className="mt-4 font-display text-6xl sm:text-7xl leading-[0.9] tracking-[-0.03em]">
+              This one is <span className="italic">kept close.</span>
+            </h1>
+            <p className="mt-6 max-w-sm text-lg leading-snug text-foreground/70">
+              Leave your details and a note. If the owner says yes, you&apos;ll
+              get a private link by email.
+            </p>
           </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            {/* Image */}
-            <div className="relative w-full">
-              <img
-                src={photo.imageUrl}
-                alt={photo.caption || "Photo"}
-                className="w-full h-auto"
-              />
-            </div>
+          <div className="rise [animation-delay:150ms]">
+            <RequestAccessForm photoId={photoId} />
+          </div>
+        </main>
+      ) : (
+        <main>
+          {/* Image */}
+          <div className="develop flex justify-center px-2 sm:px-10">
+            <img
+              src={photo.imageUrl}
+              alt={photo.caption || "Photo"}
+              className="max-h-[82vh] w-auto max-w-full object-contain shadow-[0_30px_60px_-30px_rgba(0,0,0,0.45)]"
+            />
+          </div>
 
-            {/* Info */}
-            <div className="p-6">
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">
-                {photo.caption || "Untitled"}
-              </h1>
+          {/* Info */}
+          <section className="mx-auto mt-14 grid max-w-6xl gap-10 border-t border-rule px-5 sm:px-10 pt-10 pb-24 md:grid-cols-[2fr_1fr]">
+            <h1 className="rise font-display text-5xl sm:text-7xl leading-[0.9] tracking-[-0.03em] break-words [animation-delay:200ms]">
+              {photo.caption || <span className="italic">Untitled</span>}
+            </h1>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {photo.takenAt && (
-                  <div>
-                    <p className="text-sm text-gray-500">Date taken</p>
-                    <p className="text-lg font-medium text-gray-900">
-                      {new Date(photo.takenAt).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                )}
-                {photo.place && (
-                  <div>
-                    <p className="text-sm text-gray-500">Location</p>
-                    <p className="text-lg font-medium text-gray-900">
-                      {photo.place}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Tags */}
+            <dl className="rise space-y-5 font-mono text-[11px] uppercase tracking-[0.2em] [animation-delay:300ms]">
+              {takenAt && (
+                <div className="flex justify-between gap-4 border-b border-rule pb-3">
+                  <dt className="text-muted">Date</dt>
+                  <dd className="text-right">{takenAt}</dd>
+                </div>
+              )}
+              {photo.place && (
+                <div className="flex justify-between gap-4 border-b border-rule pb-3">
+                  <dt className="text-muted">Place</dt>
+                  <dd className="text-right">{photo.place}</dd>
+                </div>
+              )}
               {photo.tags && photo.tags.length > 0 && (
                 <div>
-                  <p className="text-sm text-gray-500 mb-2">Tags</p>
-                  <div className="flex flex-wrap gap-2">
+                  <dt className="mb-3 text-muted">Tags</dt>
+                  <dd className="flex flex-wrap gap-2">
                     {photo.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
+                        className="border border-foreground/20 px-2.5 py-1 normal-case tracking-normal"
                       >
                         {tag}
                       </span>
                     ))}
-                  </div>
+                  </dd>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-      </div>
+            </dl>
+          </section>
+        </main>
+      )}
     </div>
   );
 }

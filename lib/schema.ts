@@ -24,6 +24,8 @@ export const photos = pgTable(
     lat: text("lat"),
     lng: text("lng"),
     tags: text("tags").array().default(sql`ARRAY[]::text[]`),
+    // AI-assigned, from PHOTO_CATEGORIES in lib/classify.ts
+    categories: text("categories").array().default(sql`ARRAY[]::text[]`),
     caption: text("caption"),
     visibility: varchar("visibility", { length: 50 }).default("public"),
     albumId: uuid("album_id").references(() => albums.id),
