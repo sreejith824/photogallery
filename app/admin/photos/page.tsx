@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Lightbox from "@/components/Lightbox";
 
 interface Photo {
   id: string;
@@ -9,6 +10,8 @@ interface Photo {
   r2Key: string;
   visibility: string;
   uploadedAt: string;
+  takenAt: string | null;
+  place: string | null;
   thumbnailKey: string | null;
 }
 
@@ -18,9 +21,11 @@ export default function AdminPhotosPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const allSelected = photos.length > 0 && selected.size === photos.length;
+  const previewIndex = photos.findIndex((p) => p.id === previewId);
 
   // Show the header checkbox as "partly selected" when only some rows are ticked
   useEffect(() => {
@@ -43,21 +48,21 @@ export default function AdminPhotosPage() {
   };
 
   useEffect(() => {
+    const fetchPhotos = async () => {
+      try {
+        const response = await fetch("/api/photos?limit=1000");
+        if (!response.ok) throw new Error("Failed to fetch photos");
+        const data = await response.json();
+        setPhotos(data);
+      } catch (error) {
+        console.error("Error fetching photos:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchPhotos();
   }, []);
-
-  const fetchPhotos = async () => {
-    try {
-      const response = await fetch("/api/photos?limit=1000");
-      if (!response.ok) throw new Error("Failed to fetch photos");
-      const data = await response.json();
-      setPhotos(data);
-    } catch (error) {
-      console.error("Error fetching photos:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDelete = async (photoId: string) => {
     if (!confirm("Delete this photo? This cannot be undone.")) return;
@@ -167,6 +172,7 @@ export default function AdminPhotosPage() {
                       className="h-4 w-4 cursor-pointer accent-blue-600"
                     />
                   </th>
+                  <th className="w-20 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Caption</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Visibility</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
@@ -188,10 +194,33 @@ export default function AdminPhotosPage() {
                         className="h-4 w-4 cursor-pointer accent-blue-600"
                       />
                     </td>
+                    <td className="w-20 px-3 py-2">
+                      <button
+                        onClick={() => setPreviewId(photo.id)}
+                        aria-label={`Preview ${photo.caption || "photo"}`}
+                        className="block h-14 w-14 overflow-hidden rounded bg-gray-100 ring-blue-500 transition hover:ring-2"
+                      >
+                        {photo.thumbnailKey ? (
+                          <img
+                            src={`/api/photos/${photo.id}/thumbnail`}
+                            alt=""
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                            None
+                          </span>
+                        )}
+                      </button>
+                    </td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                      <Link href={`/photo/${photo.id}`} className="text-blue-600 hover:text-blue-700 truncate max-w-xs block">
+                      <button
+                        onClick={() => setPreviewId(photo.id)}
+                        className="text-blue-600 hover:text-blue-700 truncate max-w-xs block text-left"
+                      >
                         {photo.caption || "(Untitled)"}
-                      </Link>
+                      </button>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -221,6 +250,16 @@ export default function AdminPhotosPage() {
           </div>
         )}
       </div>
+
+      {previewIndex >= 0 && (
+        <Lightbox
+          photos={photos}
+          index={previewIndex}
+          label="Manage"
+          onIndexChange={(i) => setPreviewId(photos[i].id)}
+          onClose={() => setPreviewId(null)}
+        />
+      )}
     </div>
   );
 }
