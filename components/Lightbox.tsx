@@ -17,6 +17,11 @@ interface LightboxProps {
   label: string;
   onIndexChange: (index: number) => void;
   onClose: () => void;
+  // Paginated lists: more photos exist beyond `photos`
+  hasMore?: boolean;
+  onNeedMore?: () => void;
+  // Total across all pages, for the counter
+  total?: number;
 }
 
 // Full-size URLs are presigned per photo, so fetch them lazily and cache by id
@@ -46,6 +51,9 @@ export default function Lightbox({
   label,
   onIndexChange,
   onClose,
+  hasMore = false,
+  onNeedMore,
+  total,
 }: LightboxProps) {
   const photo = photos[index];
   const [loaded, setLoaded] = useState<{ id: string; url: string } | null>(null);
@@ -54,11 +62,21 @@ export default function Lightbox({
 
   const go = useCallback(
     (delta: number) => {
+      // At the end of a paginated list, load the next page instead of wrapping
+      if (delta > 0 && index === photos.length - 1 && hasMore) {
+        onNeedMore?.();
+        return;
+      }
       // Wrap around at both ends
       onIndexChange((index + delta + photos.length) % photos.length);
     },
-    [index, photos.length, onIndexChange]
+    [index, photos.length, onIndexChange, hasMore, onNeedMore]
   );
+
+  // Fetch the next page a few photos before the end, so stepping stays smooth
+  useEffect(() => {
+    if (hasMore && index >= photos.length - 3) onNeedMore?.();
+  }, [index, photos.length, hasMore, onNeedMore]);
 
   // Load the current photo and warm up its neighbours
   useEffect(() => {
@@ -132,7 +150,7 @@ export default function Lightbox({
         <span>
           <span className="text-white">{label}</span>
           <span className="mx-3 text-white/30">/</span>
-          {String(index + 1).padStart(2, "0")} — {String(photos.length).padStart(2, "0")}
+          {String(index + 1).padStart(2, "0")} — {String(total ?? photos.length).padStart(2, "0")}
         </span>
         <div className="flex items-center gap-6">
           <Link href={`/photo/${photo.id}`} className="hover:text-white">
