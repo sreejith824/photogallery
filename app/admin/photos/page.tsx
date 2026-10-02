@@ -54,7 +54,7 @@ export default function AdminPhotosPage() {
   useEffect(() => {
     const fetchPhotos = async () => {
       try {
-        const response = await fetch("/api/photos?limit=1000");
+        const response = await fetch("/api/admin/photos");
         if (!response.ok) throw new Error("Failed to fetch photos");
         const data = await response.json();
         setPhotos(data);

@@ -3,10 +3,15 @@ import { accessRequests } from "@/lib/schema";
 import { eq, and } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { limits, clientIp, checkLimit, tooManyRequests } from "@/lib/ratelimit";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: NextRequest) {
+  // Each request writes to the database and emails the admin, so cap it per visitor
+  const ipRetry = await checkLimit(limits.accessRequestByIp, clientIp(request));
+  if (ipRetry) return tooManyRequests(ipRetry);
+
   try {
     const { photoId, requesterName, requesterEmail, message } =
       await request.json();
@@ -17,6 +22,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const emailRetry = await checkLimit(
+      limits.accessRequestByEmail,
+      `${String(requesterEmail).trim().toLowerCase()}:${photoId}`
+    );
+    if (emailRetry) return tooManyRequests(emailRetry);
 
     // Check if this email already has a pending request for this photo
     const existingRequest = await db

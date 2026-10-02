@@ -3,8 +3,12 @@ import { accessGrants } from "@/lib/schema";
 import { eq, and, or, gt, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import * as crypto from "crypto";
+import { limits, clientIp, checkLimit, tooManyRequests } from "@/lib/ratelimit";
 
 export async function POST(request: NextRequest) {
+  const retry = await checkLimit(limits.shareValidateByIp, clientIp(request));
+  if (retry) return tooManyRequests(retry);
+
   try {
     const { token } = await request.json();
 

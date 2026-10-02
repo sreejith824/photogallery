@@ -34,7 +34,7 @@ Photos never pass through a Vercel function on the way in: the browser uploads s
 | EXIF | [exifr](https://github.com/MikeKovarik/exifr) | 7.1 | `lib/exif.ts` (capture date + offset), GPS in `notify` route |
 | AI | [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-typescript) — Claude Opus 5.5 vision | 0.131 | `lib/classify.ts` |
 | Email | [Resend](https://resend.com) SDK | 6.28 | `app/api/access-requests`, `app/api/admin/requests` |
-| Rate limiting | Upstash Redis + `@upstash/ratelimit` | — | installed, **not used yet** |
+| Rate limiting | Upstash Redis + `@upstash/ratelimit` | 2.1 | `lib/ratelimit.ts`, used by access requests and magic-link validation |
 
 ## Platform services
 

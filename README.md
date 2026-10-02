@@ -34,7 +34,7 @@ Photo Pond is a Next.js app for publishing a personal photo archive. Upload phot
 | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Libraries and services used, data model, upload pipeline, where things live in the code |
 | [FLOWS.md](FLOWS.md) | Design doc: sequence diagrams for sign-in, upload, browsing, access requests and magic links |
 
-> FLOWS.md captures the intended design. Some flows in it aren't built yet: revoking access, the visibility toggle in the admin UI, tag filtering, and Upstash rate limiting.
+> FLOWS.md captures the intended design. Some flows in it aren't built yet: revoking access, the visibility toggle in the admin UI, and tag filtering.
 
 ## Tech stack at a glance
 
