@@ -2,8 +2,9 @@ import { getAdminSession } from "@/lib/auth";
 import { db } from "@/lib/index";
 import { photos } from "@/lib/schema";
 import { NextRequest, NextResponse, after } from "next/server";
-import { eq, sql } from "drizzle-orm";
-import { uploadFile } from "@/lib/r2";
+import { eq, sql, isNotNull } from "drizzle-orm";
+import { uploadFile, deleteObject } from "@/lib/r2";
+import { sha256Hex, differenceHash, hammingDistance, LOOKALIKE_MAX_DISTANCE } from "@/lib/image-hash";
 import { getCaptureDate, buildAutoTags, type CaptureDate } from "@/lib/exif";
 import { classifyPhoto } from "@/lib/classify";
 import { listCategories, addCategories } from "@/lib/category-store";
@@ -103,6 +104,38 @@ async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> 
   }
 }
 
+function duplicateResponse(existing: { id: string; caption: string | null }) {
+  return NextResponse.json(
+    { error: "This photo is already in the gallery", duplicateOf: existing },
+    { status: 409 }
+  );
+}
+
+// Closest already-classified photo that looks the same, if any
+async function findLookalike(perceptualHash: string) {
+  const candidates = await db
+    .select({
+      id: photos.id,
+      caption: photos.caption,
+      categories: photos.categories,
+      tags: photos.tags,
+      tagsPending: photos.tagsPending,
+      perceptualHash: photos.perceptualHash,
+    })
+    .from(photos)
+    .where(isNotNull(photos.perceptualHash));
+
+  let best: ((typeof candidates)[number] & { distance: number }) | null = null;
+  for (const candidate of candidates) {
+    if (candidate.tagsPending !== 0) continue; // nothing to reuse yet
+    const distance = hammingDistance(perceptualHash, candidate.perceptualHash!);
+    if (distance <= LOOKALIKE_MAX_DISTANCE && (!best || distance < best.distance)) {
+      best = { ...candidate, distance };
+    }
+  }
+  return best;
+}
+
 export async function POST(request: NextRequest) {
   if (!(await getAdminSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -114,6 +147,7 @@ export async function POST(request: NextRequest) {
       typeof rawCaption === "string" && rawCaption.trim()
         ? rawCaption.trim().slice(0, 500)
         : filename;
+    const hasUserCaption = caption !== filename;
 
     if (!s3Key) {
       return NextResponse.json(
@@ -126,6 +160,24 @@ export async function POST(request: NextRequest) {
     console.log("Downloading from R2:", s3Key);
     const buffer = await getFileFromR2(s3Key);
     console.log("Downloaded buffer size:", buffer.length);
+
+    // Exact duplicate: drop the upload before doing any processing. The upload
+    // page checks this first; this is the backstop.
+    const contentHash = sha256Hex(buffer);
+    const [duplicate] = await db
+      .select({ id: photos.id, caption: photos.caption })
+      .from(photos)
+      .where(eq(photos.contentHash, contentHash))
+      .limit(1);
+    if (duplicate) {
+      await deleteObject(s3Key).catch(() => {});
+      return duplicateResponse(duplicate);
+    }
+
+    // Lookalike (resized/re-compressed copy, burst shot): reuse that photo's
+    // classification instead of paying for another AI call
+    const perceptualHash = await differenceHash(buffer).catch(() => null);
+    const lookalike = perceptualHash ? await findLookalike(perceptualHash) : null;
 
     // Extract EXIF data
     let exifData: any = {};
@@ -207,20 +259,44 @@ export async function POST(request: NextRequest) {
         place,
         lat,
         lng,
-        tags,
+        tags: lookalike ? [...new Set([...tags, ...(lookalike.tags ?? [])])] : tags,
         caption,
         visibility: "public",
         width,
         height,
-        tagsPending: 1,
+        contentHash,
+        perceptualHash,
+        ...(lookalike
+          ? {
+              categories: lookalike.categories ?? [],
+              ...(hasUserCaption || !lookalike.caption ? {} : { caption: lookalike.caption }),
+              tagsPending: 0,
+            }
+          : { tagsPending: 1 }),
       })
-      .returning();
+      .returning()
+      .catch(async (error) => {
+        // Same file uploaded twice at the same moment: the unique index wins
+        if ((error.code ?? error.cause?.code) === "23505") {
+          await deleteObject(s3Key).catch(() => {});
+          return null;
+        }
+        throw error;
+      });
+
+    if (!insertResult) {
+      const [existing] = await db
+        .select({ id: photos.id, caption: photos.caption })
+        .from(photos)
+        .where(eq(photos.contentHash, contentHash));
+      return duplicateResponse(existing ?? { id: "", caption: null });
+    }
 
     const createdPhoto = insertResult[0];
-    const hasUserCaption = caption !== filename;
 
-    // Classify with Claude after the response is sent, so uploads stay fast
-    after(async () => {
+    // Classify with Claude after the response is sent, so uploads stay fast.
+    // Skipped for lookalikes, which reuse the matching photo's classification.
+    if (!lookalike) after(async () => {
       try {
         const result = await classifyPhoto(buffer, await listCategories());
         if (!result) return;
@@ -247,6 +323,9 @@ export async function POST(request: NextRequest) {
       s3Key,
       thumbnailKey,
       message: "Photo uploaded successfully",
+      ...(lookalike
+        ? { similarTo: { id: lookalike.id, caption: lookalike.caption, distance: lookalike.distance } }
+        : {}),
     });
   } catch (error) {
     console.error("Upload notify error:", error);

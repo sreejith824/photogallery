@@ -8,9 +8,32 @@ interface UploadItem {
   file: File;
   previewUrl: string;
   caption: string;
-  status: "staged" | "pending" | "success" | "error";
+  // checking: hashing / asking the server whether it's already in the gallery
+  status: "checking" | "staged" | "pending" | "success" | "error" | "duplicate";
   // Set once the file is in R2, so a retry only re-runs processing
   s3Key?: string;
+  contentHash?: string;
+  // Existing photo with the exact same file (absent when the same file was
+  // picked twice in this batch)
+  duplicateOf?: PhotoRef;
+  // Existing photo that looks the same; its classification was reused (no AI call)
+  similarTo?: PhotoRef;
+}
+
+interface PhotoRef {
+  id: string;
+  caption: string | null;
+}
+
+class DuplicateError extends Error {
+  constructor(public duplicateOf: PhotoRef) {
+    super("Photo is already in the gallery");
+  }
+}
+
+async function sha256Hex(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export default function UploadPage() {
@@ -38,17 +61,61 @@ export default function UploadPage() {
   const updateItem = (id: string, patch: Partial<UploadItem>) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
 
-  const stageFiles = (files: File[]) => {
-    const staged = files
+  // Exact duplicates are caught here, before anything is uploaded or sent to the AI
+  const stageFiles = async (files: File[]) => {
+    const staged: UploadItem[] = files
       .filter((file) => file.type.startsWith("image/"))
       .map((file) => ({
         id: crypto.randomUUID(),
         file,
         previewUrl: URL.createObjectURL(file),
         caption: "",
-        status: "staged" as const,
+        status: "checking",
       }));
+    if (staged.length === 0) return;
     setItems((prev) => [...prev, ...staged]);
+
+    const hashes = new Map<string, string>(); // item id -> hash
+    await Promise.all(
+      staged.map(async (item) => {
+        try {
+          hashes.set(item.id, await sha256Hex(item.file));
+        } catch {
+          // Hashing failed: upload anyway, the server still checks
+        }
+      })
+    );
+
+    let inGallery: Record<string, PhotoRef> = {};
+    try {
+      const response = await fetch("/api/admin/photos/duplicates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hashes: [...new Set(hashes.values())] }),
+      });
+      if (response.ok) inGallery = await response.json();
+    } catch {
+      // Check unavailable: the server-side check still applies on upload
+    }
+
+    setItems((prev) => {
+      // Hashes of files already in the list, to catch the same file picked twice
+      const seen = new Set(
+        prev.filter((p) => !hashes.has(p.id) && p.contentHash).map((p) => p.contentHash)
+      );
+      return prev.map((item) => {
+        if (!staged.some((s) => s.id === item.id)) return item;
+        const contentHash = hashes.get(item.id);
+        if (contentHash && inGallery[contentHash]) {
+          return { ...item, contentHash, status: "duplicate", duplicateOf: inGallery[contentHash] };
+        }
+        if (contentHash && seen.has(contentHash)) {
+          return { ...item, contentHash, status: "duplicate" };
+        }
+        if (contentHash) seen.add(contentHash);
+        return { ...item, contentHash, status: "staged" };
+      });
+    });
   };
 
   const removeItem = (id: string) => {
@@ -91,7 +158,10 @@ export default function UploadPage() {
         caption: item.caption,
       }),
     });
+    const data = await notifyResponse.json().catch(() => ({}));
+    if (notifyResponse.status === 409 && data.duplicateOf) throw new DuplicateError(data.duplicateOf);
     if (!notifyResponse.ok) throw new Error("Failed to notify backend");
+    return data.similarTo as PhotoRef | undefined;
   };
 
   const handleUploadFile = async (item: UploadItem) => {
@@ -104,10 +174,15 @@ export default function UploadPage() {
       const processed = processingQueue.current.then(() => processPhoto(item, s3Key));
       // Keep the queue going even if this photo fails
       processingQueue.current = processed.catch(() => {});
-      await processed;
+      const similarTo = await processed;
 
-      updateItem(item.id, { status: "success" });
+      updateItem(item.id, { status: "success", similarTo });
     } catch (error) {
+      if (error instanceof DuplicateError) {
+        // The server already removed the uploaded copy
+        updateItem(item.id, { status: "duplicate", duplicateOf: error.duplicateOf });
+        return;
+      }
       console.error("Upload error:", error);
       updateItem(item.id, { status: "error" });
     }
@@ -237,7 +312,10 @@ export default function UploadPage() {
                         <span className="text-xs text-gray-500 truncate">
                           {item.file.name}
                         </span>
-                        {item.status === "staged" && (
+                        {item.status === "checking" && (
+                          <span className="text-sm text-gray-500">Checking…</span>
+                        )}
+                        {(item.status === "staged" || item.status === "duplicate") && (
                           <button
                             onClick={() => removeItem(item.id)}
                             className="text-xs text-gray-400 hover:text-red-600"
@@ -251,10 +329,48 @@ export default function UploadPage() {
                         {item.status === "success" && (
                           <span className="text-sm text-green-600">✓ Done</span>
                         )}
+                        {item.status === "duplicate" && (
+                          <span className="text-sm text-amber-600">Skipped: duplicate</span>
+                        )}
                         {item.status === "error" && (
                           <span className="text-sm text-red-600">✗ Error, retry with Upload</span>
                         )}
                       </div>
+                      {item.status === "duplicate" && (
+                        <p className="mt-1 text-xs text-amber-700">
+                          {item.duplicateOf ? (
+                            <>
+                              Already in the gallery as{" "}
+                              <a
+                                href={`/photo/${item.duplicateOf.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline"
+                              >
+                                {item.duplicateOf.caption || "Untitled"}
+                              </a>
+                              . Not uploaded.
+                            </>
+                          ) : (
+                            "Same file selected twice. Not uploaded."
+                          )}
+                        </p>
+                      )}
+                      {item.status === "success" && item.similarTo && (
+                        <p className="mt-1 text-xs text-amber-700">
+                          Looks like{" "}
+                          <a
+                            href={`/photo/${item.similarTo.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline"
+                          >
+                            {item.similarTo.caption || "Untitled"}
+                          </a>
+                          : reused its categories and tags, no AI call. Delete one in Manage Photos if
+                          it&apos;s a duplicate.
+                        </p>
+                      )}
                       <input
                         type="text"
                         value={item.caption}

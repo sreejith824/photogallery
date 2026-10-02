@@ -10,6 +10,7 @@ import {
   integer,
   index,
   boolean,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const photos = pgTable(
@@ -33,11 +34,16 @@ export const photos = pgTable(
     width: integer("width"),
     height: integer("height"),
     tagsPending: integer("tags_pending").default(0), // 0 = complete, 1 = pending
+    // SHA-256 of the original file: blocks exact duplicate uploads
+    contentHash: varchar("content_hash", { length: 64 }),
+    // 64-bit difference hash (hex) of the image: finds lookalikes
+    perceptualHash: varchar("perceptual_hash", { length: 16 }),
   },
   (table) => ({
     ownerIdIdx: index("photos_owner_id_idx").on(table.ownerId),
     visibilityIdx: index("photos_visibility_idx").on(table.visibility),
     tagsIdx: index("photos_tags_idx").on(table.tags),
+    contentHashIdx: uniqueIndex("photos_content_hash_idx").on(table.contentHash),
   })
 );
 

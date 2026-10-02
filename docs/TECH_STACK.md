@@ -57,7 +57,7 @@ Defined in `lib/schema.ts`:
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `photos` | One row per photo | `r2_key`, `thumbnail_key`, `caption`, `taken_at`, `place`, `lat`/`lng`, `tags[]`, `categories[]`, `visibility` (`public`/`restricted`), `width`/`height`, `tags_pending` |
+| `photos` | One row per photo | `r2_key`, `thumbnail_key`, `caption`, `taken_at`, `place`, `lat`/`lng`, `tags[]`, `categories[]`, `visibility` (`public`/`restricted`), `width`/`height`, `tags_pending`, `content_hash` (SHA-256, unique), `perceptual_hash` (64-bit difference hash) |
 | `categories` | Gallery categories | `slug` (stored in `photos.categories`), `label`, `source` (`seed`/`admin`/`ai`), `hidden`, `sort_order` |
 | `access_requests` | Visitor asks to see a restricted photo | `scope_type`/`scope_id`, requester name/email, `status` |
 | `access_grants` | Approved access, redeemed via magic link | `token_hash`, `expires_at`, `revoked_at` |
@@ -71,15 +71,20 @@ Categories are dynamic, stored in the `categories` table:
 
 ## How a photo upload works
 
+0. **Browser** hashes each selected file (SHA-256) and asks `/api/admin/photos/duplicates` which already exist. Exact duplicates, including the same file picked twice, are marked "Skipped: duplicate" and never uploaded.
 1. **Browser** asks `/api/photos/presign` (admin only) for a presigned R2 URL, then `PUT`s the file directly to R2 — avoids Vercel's 4.5 MB request limit.
 2. **Browser** calls `/api/photos/notify` for each photo, one at a time.
-3. **Server** downloads the original from R2 and:
+3. **Server** downloads the original from R2 and first checks for duplicates, before any other work:
+   - **exact duplicate** (same SHA-256): deletes the just-uploaded file and returns `409`; the unique index on `content_hash` also catches two simultaneous uploads
+   - **lookalike** (difference hash within 4 of 64 bits of an already-classified photo, e.g. a resized copy or burst shot): reuses that photo's categories, tags and caption instead of calling Claude, and the upload page shows "Looks like …"
+
+   Then it:
    - reads the EXIF capture date (`DateTimeOriginal` + UTC offset) and GPS
    - turns GPS into "Locality, Country" via Nominatim (reusing nearby known places, ≥1.1 s between calls)
    - creates a 400×400 WebP thumbnail with sharp and stores it in R2
    - adds auto tags: year, "Month Year", locality, country
    - inserts the `photos` row (caption = what you typed, else the file name)
-4. **After the response** (`after()`), Claude classifies a 1024px copy via a strict tool call: categories, 3–6 tags, and a caption (only used if you didn't write one).
+4. **After the response** (`after()`, skipped for lookalikes), Claude classifies a 1024px copy via a strict tool call: categories, 3–6 tags, and a caption (only used if you didn't write one).
 
 Photos that fail classification keep `tags_pending = 1` and can be retried with `scripts/classify-pending.mjs`.
 
@@ -155,3 +160,4 @@ One-off maintenance scripts in `scripts/` (run with `npx dotenv -e .env.local --
 | `backfill-places.js` | Fill missing place names from stored GPS |
 | `backfill-taken-at.js` | Re-read EXIF capture dates from the originals |
 | `backfill-tags.js` | Add date and place tags to existing photos |
+| `backfill-hashes.mjs` | Fingerprint existing photos for duplicate detection and report exact duplicates and lookalikes (deletes nothing) |
