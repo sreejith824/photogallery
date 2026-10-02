@@ -3,6 +3,7 @@
 export const PHOTO_CATEGORIES = [
   "nature",
   "city",
+  "heritage",
   "people",
   "animals",
   "food",

@@ -18,7 +18,7 @@ const client = new Anthropic();
 const SYSTEM_PROMPT = `You catalogue photos for a personal photo gallery.
 
 For each photo return:
-- categories: every category from the allowed list that clearly applies (usually 1-2). "nature" covers landscapes, mountains, forests, water, sky, plants. "city" covers streets, buildings, urban scenes. "people" applies when a person is a main subject. "documents" covers scans, screenshots, diagrams and paperwork. Use "other" only when nothing else fits.
+- categories: every category from the allowed list that clearly applies (usually 1-2). "nature" covers landscapes, mountains, forests, water, sky, plants. "city" covers streets, modern buildings, urban scenes. "heritage" covers historical places and cultural landmarks: palaces, castles, forts, temples, churches, monuments, ruins, statues and sculptures, old towns (a historic old town can be both "heritage" and "city"). "people" applies when a person is a main subject. "documents" covers scans, screenshots, diagrams and paperwork. Use "other" only when nothing else fits.
 - tags: 3-6 short, specific tags for what is visible (objects, landscape features, setting, season, time of day). Title case, no duplicates of the categories.
 - caption: a short, natural caption (max 8 words) describing the scene. Don't start with "A photo of".
 

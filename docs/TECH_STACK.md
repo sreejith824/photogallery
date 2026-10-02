@@ -60,7 +60,7 @@ Defined in `lib/schema.ts`:
 | `access_grants` | Approved access, redeemed via magic link | `token_hash`, `expires_at`, `revoked_at` |
 | `albums`, `users` | Defined for future use | — |
 
-`categories` come from a fixed list in `lib/categories.ts` (nature, city, people, animals, food, documents, other), shared by the gallery, the admin editor and the classifier.
+`categories` come from a fixed list in `lib/categories.ts` (nature, city, heritage, people, animals, food, documents, other), shared by the gallery, the admin editor and the classifier.
 
 ## How a photo upload works
 
