@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { uploadFile } from "@/lib/r2";
 import { getCaptureDate, buildAutoTags, type CaptureDate } from "@/lib/exif";
 import { classifyPhoto } from "@/lib/classify";
+import { listCategories, addCategories } from "@/lib/category-store";
 import sharp from "sharp";
 import * as exifr from "exifr";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -221,8 +222,10 @@ export async function POST(request: NextRequest) {
     // Classify with Claude after the response is sent, so uploads stay fast
     after(async () => {
       try {
-        const result = await classifyPhoto(buffer);
+        const result = await classifyPhoto(buffer, await listCategories());
         if (!result) return;
+        // New AI categories stay off the gallery until enough photos use them
+        await addCategories(result.newCategories, "ai");
         await db
           .update(photos)
           .set({

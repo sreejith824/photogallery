@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Lightbox from "@/components/Lightbox";
-import { PHOTO_CATEGORIES } from "@/lib/categories";
+import { isCategoryVisible, labelFromSlug, type Category } from "@/lib/categories";
 
 interface Photo {
   id: string;
@@ -17,15 +17,21 @@ interface Photo {
   visibility: string;
 }
 
-// Display order for the categories
-const CATEGORY_ORDER = PHOTO_CATEGORIES;
-
 export default function GalleryPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<{ year?: string; place?: string }>({});
   const [category, setCategory] = useState<string | null>(null);
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
+  const [categoryList, setCategoryList] = useState<Category[]>([]);
+
+  // Categories come from the database (seeded, admin-made or AI-made)
+  useEffect(() => {
+    fetch("/api/categories")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setCategoryList)
+      .catch(() => setCategoryList([]));
+  }, []);
 
   useEffect(() => {
     const fetchPhotos = async () => {
@@ -52,10 +58,17 @@ export default function GalleryPage() {
 
   const hasFilter = Boolean(filter.year || filter.place);
 
-  const categoryCounts = CATEGORY_ORDER.map((c) => ({
-    name: c,
-    count: photos.filter((p) => p.categories?.includes(c)).length,
-  })).filter((c) => c.count > 0);
+  const categoryCounts = categoryList
+    .map((c) => ({
+      name: c.slug,
+      label: c.label,
+      count: photos.filter((p) => p.categories?.includes(c.slug)).length,
+      category: c,
+    }))
+    .filter((c) => isCategoryVisible(c.category, c.count));
+  const categoryLabel = category
+    ? (categoryList.find((c) => c.slug === category)?.label ?? labelFromSlug(category))
+    : "All";
   const visiblePhotos = category
     ? photos.filter((p) => p.categories?.includes(category))
     : photos;
@@ -96,17 +109,17 @@ export default function GalleryPage() {
       {/* Categories */}
       {categoryCounts.length > 0 && (
         <nav className="rise flex flex-wrap items-baseline gap-x-7 gap-y-2 px-5 sm:px-10 pb-8 [animation-delay:450ms]">
-          {[{ name: null, count: photos.length }, ...categoryCounts].map((c) => {
+          {[{ name: null, label: "All", count: photos.length }, ...categoryCounts].map((c) => {
             const active = category === c.name;
             return (
               <button
                 key={c.name ?? "all"}
                 onClick={() => setCategory(c.name)}
-                className={`group flex items-baseline gap-1.5 font-display text-3xl sm:text-4xl capitalize leading-none transition-colors ${
+                className={`group flex items-baseline gap-1.5 font-display text-3xl sm:text-4xl leading-none transition-colors ${
                   active ? "italic text-accent" : "text-foreground/45 hover:text-foreground"
                 }`}
               >
-                {c.name ?? "All"}
+                {c.label}
                 <sup className="font-mono text-[10px] not-italic tracking-[0.15em] text-muted">
                   {String(c.count).padStart(2, "0")}
                 </sup>
@@ -241,7 +254,7 @@ export default function GalleryPage() {
         <Lightbox
           photos={carouselPhotos}
           index={openIndex}
-          label={category ?? "All"}
+          label={categoryLabel}
           onIndexChange={(i) => setOpenPhotoId(carouselPhotos[i].id)}
           onClose={() => setOpenPhotoId(null)}
         />

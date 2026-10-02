@@ -1,5 +1,5 @@
 import { getAdminSession } from "@/lib/auth";
-import { isPhotoCategory } from "@/lib/categories";
+import { listCategories } from "@/lib/category-store";
 import { db } from "@/lib/index";
 import { photos } from "@/lib/schema";
 import { eq } from "drizzle-orm";
@@ -43,7 +43,8 @@ export async function PATCH(
     }
 
     if ("categories" in body) {
-      if (!Array.isArray(body.categories) || !body.categories.every(isPhotoCategory)) {
+      const known = new Set((await listCategories()).map((c) => c.slug));
+      if (!Array.isArray(body.categories) || !body.categories.every((c: unknown) => typeof c === "string" && known.has(c))) {
         return NextResponse.json({ error: "categories contains an unknown category" }, { status: 400 });
       }
       updates.categories = [...new Set<string>(body.categories)];

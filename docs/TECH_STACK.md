@@ -56,11 +56,16 @@ Defined in `lib/schema.ts`:
 | Table | Purpose | Key columns |
 |---|---|---|
 | `photos` | One row per photo | `r2_key`, `thumbnail_key`, `caption`, `taken_at`, `place`, `lat`/`lng`, `tags[]`, `categories[]`, `visibility` (`public`/`restricted`), `width`/`height`, `tags_pending` |
+| `categories` | Gallery categories | `slug` (stored in `photos.categories`), `label`, `source` (`seed`/`admin`/`ai`), `hidden`, `sort_order` |
 | `access_requests` | Visitor asks to see a restricted photo | `scope_type`/`scope_id`, requester name/email, `status` |
 | `access_grants` | Approved access, redeemed via magic link | `token_hash`, `expires_at`, `revoked_at` |
 | `albums`, `users` | Defined for future use | — |
 
-`categories` come from a fixed list in `lib/categories.ts` (nature, city, heritage, people, animals, food, documents, other), shared by the gallery, the admin editor and the classifier.
+Categories are dynamic, stored in the `categories` table:
+
+- **Seeded** on first read with nature, city, heritage, people, animals, food, documents, other (`DEFAULT_CATEGORIES` in `lib/categories.ts`).
+- **AI-created:** the classifier gets the current list and must reuse it; only when nothing fits may it propose one new, general 1–2 word category. Names are normalised and matched against existing ones (singular/plural, label) in `lib/categories.ts`. AI categories show on the gallery once 3 photos use them.
+- **Admin-managed** at `/admin/categories`: add, rename (display label only), hide, merge (moves photos) and delete.
 
 ## How a photo upload works
 
@@ -83,7 +88,7 @@ Photos that fail classification keep `tags_pending = 1` and can be retried with 
 | Gallery | `app/page.tsx` | Masthead, category tabs (only non-empty), year/place filters, edge-to-edge grid |
 | Carousel | `components/Lightbox.tsx` | Keyboard/swipe, filmstrip, preloads neighbours; walks the current category/filter |
 | Photo page | `app/photo/[photoId]/page.tsx` | Full image + metadata, or request-access form for restricted photos |
-| Admin | `app/admin/*` | Upload with captions, manage (thumbnails, preview, edit caption/categories, bulk delete), access requests |
+| Admin | `app/admin/*` | Upload with captions, manage (thumbnails, preview, edit caption/categories, bulk delete), categories, access requests |
 
 ## Scripts
 
@@ -91,7 +96,7 @@ One-off maintenance scripts in `scripts/` (run with `npx dotenv -e .env.local --
 
 | Script | What it does |
 |---|---|
-| `classify-pending.mjs` | Classify photos still marked pending (skips photos edited by the admin) |
+| `classify-pending.mjs` | Classify photos still marked pending (skips photos edited by the admin); may add new AI categories |
 | `backfill-places.js` | Fill missing place names from stored GPS |
 | `backfill-taken-at.js` | Re-read EXIF capture dates from the originals |
 | `backfill-tags.js` | Add date and place tags to existing photos |

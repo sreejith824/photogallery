@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PHOTO_CATEGORIES } from "@/lib/categories";
+import type { Category } from "@/lib/categories";
 
 export interface EditablePhoto {
   id: string;
@@ -21,6 +21,14 @@ export default function EditPhotoDialog({ photo, onClose, onSaved }: EditPhotoDi
   const [categories, setCategories] = useState<string[]>(photo.categories ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/categories")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setAllCategories)
+      .catch(() => setAllCategories([]));
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -44,7 +52,9 @@ export default function EditPhotoDialog({ photo, onClose, onSaved }: EditPhotoDi
         // Keep the stored order consistent with the gallery's category order
         body: JSON.stringify({
           caption,
-          categories: PHOTO_CATEGORIES.filter((c) => categories.includes(c)),
+          categories: allCategories.length
+            ? allCategories.map((c) => c.slug).filter((slug) => categories.includes(slug))
+            : categories,
         }),
       });
       const data = await response.json();
@@ -100,21 +110,22 @@ export default function EditPhotoDialog({ photo, onClose, onSaved }: EditPhotoDi
         <fieldset className="mt-5">
           <legend className="text-sm font-medium text-gray-700">Categories</legend>
           <div className="mt-2 flex flex-wrap gap-2">
-            {PHOTO_CATEGORIES.map((category) => {
-              const active = categories.includes(category);
+            {allCategories.map(({ slug, label, hidden }) => {
+              const active = categories.includes(slug);
               return (
                 <button
-                  key={category}
+                  key={slug}
                   type="button"
-                  onClick={() => toggleCategory(category)}
+                  onClick={() => toggleCategory(slug)}
+                  title={hidden ? "Hidden from the gallery" : undefined}
                   aria-pressed={active}
-                  className={`rounded-full border px-3 py-1 text-sm capitalize transition ${
+                  className={`rounded-full border px-3 py-1 text-sm transition ${hidden ? "border-dashed " : ""}${
                     active
                       ? "border-blue-600 bg-blue-600 text-white"
                       : "border-gray-300 text-gray-700 hover:border-gray-400"
                   }`}
                 >
-                  {category}
+                  {label}
                 </button>
               );
             })}

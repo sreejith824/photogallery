@@ -1,12 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 
-import { PHOTO_CATEGORIES, isPhotoCategory, type PhotoCategory } from "./categories.ts";
-
-export { PHOTO_CATEGORIES, type PhotoCategory };
+import { resolveCategories, type Category } from "./categories.ts";
 
 export interface Classification {
-  categories: PhotoCategory[];
+  // Category slugs, including any new ones listed in `newCategories`
+  categories: string[];
+  // Slugs the AI proposed that don't exist yet; the caller adds them (source "ai")
+  newCategories: string[];
   tags: string[];
   caption: string;
 }
@@ -15,22 +16,40 @@ export interface Classification {
 // gateway's ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN in local dev.
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You catalogue photos for a personal photo gallery.
+// Extra guidance for the starting categories; other categories are listed by name
+const CATEGORY_HINTS: Record<string, string> = {
+  nature: "landscapes, mountains, forests, water, sky, plants",
+  city: "streets, modern buildings, urban scenes",
+  heritage:
+    "historical places and cultural landmarks: palaces, castles, forts, temples, churches, monuments, ruins, statues and sculptures, old towns (a historic old town can be both heritage and city)",
+  people: "a person is a main subject",
+  documents: "scans, screenshots, diagrams and paperwork",
+  other: "only when nothing else fits",
+};
+
+function buildSystemPrompt(existing: Category[]): string {
+  const list = existing
+    .filter((c) => !c.hidden)
+    .map((c) => `- ${c.slug}${CATEGORY_HINTS[c.slug] ? `: ${CATEGORY_HINTS[c.slug]}` : ""}`)
+    .join("\n");
+
+  return `You catalogue photos for a personal photo gallery.
+
+Existing categories:
+${list}
 
 For each photo return:
-- categories: every category from the allowed list that clearly applies (usually 1-2). "nature" covers landscapes, mountains, forests, water, sky, plants. "city" covers streets, modern buildings, urban scenes. "heritage" covers historical places and cultural landmarks: palaces, castles, forts, temples, churches, monuments, ruins, statues and sculptures, old towns (a historic old town can be both "heritage" and "city"). "people" applies when a person is a main subject. "documents" covers scans, screenshots, diagrams and paperwork. Use "other" only when nothing else fits.
+- categories: every existing category that clearly applies (usually 1-2), using the exact names above. Only if none of them fits well, add ONE new category: a short, general, lowercase name (1-2 words) that many future photos could share, e.g. "sports" or "vehicles". Never invent a synonym, subtype or variant of an existing category.
 - tags: 3-6 short, specific tags for what is visible (objects, landscape features, setting, season, time of day). Title case, no duplicates of the categories.
 - caption: a short, natural caption (max 8 words) describing the scene. Don't start with "A photo of".
 
 Always answer by calling the record_classification tool.`;
+}
 
 const OUTPUT_SCHEMA: Anthropic.Beta.BetaTool.InputSchema = {
   type: "object",
   properties: {
-    categories: {
-      type: "array",
-      items: { type: "string", enum: [...PHOTO_CATEGORIES] },
-    },
+    categories: { type: "array", items: { type: "string" } },
     tags: { type: "array", items: { type: "string" } },
     caption: { type: "string" },
   },
@@ -41,7 +60,10 @@ const OUTPUT_SCHEMA: Anthropic.Beta.BetaTool.InputSchema = {
 // Classify a photo with Claude vision. Uses a strict tool call for structured
 // output (works through gateways that drop output_config.format). Returns null if
 // the model declines or doesn't call the tool; callers should treat that as "not classified".
-export async function classifyPhoto(buffer: Buffer): Promise<Classification | null> {
+export async function classifyPhoto(
+  buffer: Buffer,
+  existing: Category[]
+): Promise<Classification | null> {
   // Downscale before sending: plenty for classification, and keeps the request
   // well under the image size limit and cheap.
   const image = await sharp(buffer)
@@ -65,7 +87,7 @@ export async function classifyPhoto(buffer: Buffer): Promise<Classification | nu
       },
     ],
     tool_choice: { type: "auto" },
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(existing),
     messages: [
       {
         role: "user",
@@ -98,10 +120,11 @@ export async function classifyPhoto(buffer: Buffer): Promise<Classification | nu
   }
 
   try {
-    const parsed = toolUse.input as Classification;
-    const categories = parsed.categories.filter(isPhotoCategory);
+    const parsed = toolUse.input as { categories: string[]; tags: string[]; caption: string };
+    const { slugs, created } = resolveCategories(parsed.categories, existing);
     return {
-      categories: categories.length ? [...new Set(categories)] : ["other"],
+      categories: slugs.length ? slugs : ["other"],
+      newCategories: created,
       tags: parsed.tags.map((t) => t.trim()).filter(Boolean).slice(0, 6),
       caption: parsed.caption.trim(),
     };
