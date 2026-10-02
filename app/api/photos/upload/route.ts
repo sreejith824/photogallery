@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { uploadFile } from "@/lib/r2";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -6,9 +6,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.email || session.user.email !== process.env.ADMIN_EMAIL) {
+    if (!(await getAdminSession())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

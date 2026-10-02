@@ -2,12 +2,17 @@ import { db } from "@/lib/index";
 import { accessRequests, accessGrants } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { getAdminSession } from "@/lib/auth";
 import * as crypto from "crypto";
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function GET(request: NextRequest) {
+  if (!(await getAdminSession())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     // Get all pending requests
     const requests = await db
@@ -26,6 +31,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!(await getAdminSession())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { requestId, action } = await request.json();
 

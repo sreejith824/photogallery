@@ -9,6 +9,8 @@ interface UploadItem {
   previewUrl: string;
   caption: string;
   status: "staged" | "pending" | "success" | "error";
+  // Set once the file is in R2, so a retry only re-runs processing
+  s3Key?: string;
 }
 
 export default function UploadPage() {
@@ -19,6 +21,9 @@ export default function UploadPage() {
   // Separate input with `capture`: on phones that attribute forces the camera,
   // so it must not be on the regular file picker
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // Processing runs one photo at a time: it keeps reverse geocoding within
+  // Nominatim's 1 request/second policy and avoids piling up server work
+  const processingQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   // Release preview object URLs when the page unmounts
   const itemsRef = useRef(items);
@@ -54,36 +59,52 @@ export default function UploadPage() {
     });
   };
 
+  // Upload straight from the browser to R2 with a presigned URL. Sending the
+  // file through a Vercel function would cap uploads at 4.5 MB.
+  const uploadToR2 = async (file: File): Promise<string> => {
+    const contentType = file.type || "application/octet-stream";
+    const presignResponse = await fetch("/api/photos/presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, contentType }),
+    });
+    if (!presignResponse.ok) throw new Error("Failed to get upload URL");
+    const { s3Key, presignedUrl } = await presignResponse.json();
+
+    const putResponse = await fetch(presignedUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: file,
+    });
+    if (!putResponse.ok) throw new Error("Failed to upload file to storage");
+    return s3Key;
+  };
+
+  const processPhoto = async (item: UploadItem, s3Key: string) => {
+    // Notify backend to process (EXIF, geocoding, tagging)
+    const notifyResponse = await fetch("/api/photos/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        s3Key,
+        filename: item.file.name,
+        caption: item.caption,
+      }),
+    });
+    if (!notifyResponse.ok) throw new Error("Failed to notify backend");
+  };
+
   const handleUploadFile = async (item: UploadItem) => {
-    const fileName = item.file.name;
     updateItem(item.id, { status: "pending" });
 
     try {
-      // Upload file to backend (which handles R2 upload)
-      const formData = new FormData();
-      formData.append("file", item.file);
-      formData.append("filename", fileName);
+      const s3Key = item.s3Key ?? (await uploadToR2(item.file));
+      updateItem(item.id, { s3Key });
 
-      const uploadResponse = await fetch("/api/photos/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) throw new Error("Failed to upload file");
-      const { s3Key } = await uploadResponse.json();
-
-      // Notify backend to process (EXIF, geocoding, tagging)
-      const notifyResponse = await fetch("/api/photos/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          s3Key,
-          filename: fileName,
-          caption: item.caption,
-        }),
-      });
-
-      if (!notifyResponse.ok) throw new Error("Failed to notify backend");
+      const processed = processingQueue.current.then(() => processPhoto(item, s3Key));
+      // Keep the queue going even if this photo fails
+      processingQueue.current = processed.catch(() => {});
+      await processed;
 
       updateItem(item.id, { status: "success" });
     } catch (error) {
