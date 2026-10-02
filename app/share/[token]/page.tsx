@@ -40,20 +40,21 @@ export default function SharePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-700 mb-2">Validating your access...</p>
-          <div className="inline-block animate-spin">⏳</div>
-        </div>
+      <div className="grain min-h-screen bg-background flex items-center justify-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted animate-pulse">
+          Checking your access…
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="grain min-h-screen bg-background flex items-center justify-center px-6">
       <div className="text-center">
-        <p className="text-red-600 mb-4">{error}</p>
-        <p className="text-gray-600">The link may be invalid or expired.</p>
+        <p className="font-display text-5xl italic mb-4">{error}</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
+          The link may be invalid or expired.
+        </p>
       </div>
     </div>
   );
