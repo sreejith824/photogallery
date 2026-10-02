@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { db } from "@/lib/index";
 import { photos } from "@/lib/schema";
 import { eq } from "drizzle-orm";
@@ -21,9 +21,7 @@ export async function DELETE(
   { params }: { params: Promise<{ photoId: string }> }
 ) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.email || session.user.email !== process.env.ADMIN_EMAIL) {
+    if (!(await getAdminSession())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

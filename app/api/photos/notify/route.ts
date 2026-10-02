@@ -1,8 +1,8 @@
-import { auth } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { db } from "@/lib/index";
 import { photos } from "@/lib/schema";
 import { NextRequest, NextResponse, after } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { uploadFile } from "@/lib/r2";
 import { getCaptureDate, buildAutoTags, type CaptureDate } from "@/lib/exif";
 import { classifyPhoto } from "@/lib/classify";
@@ -38,7 +38,45 @@ interface GeocodeResult {
   country: string | null;
 }
 
+// Nominatim allows at most 1 request/second. Space calls within this instance;
+// the upload page also processes photos one at a time.
+let nextGeocodeAt = 0;
+async function waitForGeocodeSlot() {
+  const now = Date.now();
+  const wait = Math.max(0, nextGeocodeAt - now);
+  nextGeocodeAt = Math.max(now, nextGeocodeAt) + 1100;
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+}
+
+// Reuse the place of an existing photo taken within ~100 m (3 decimal places),
+// so repeat locations don't hit Nominatim at all (its policy asks for caching)
+async function findCachedPlace(lat: number, lng: number): Promise<GeocodeResult | null> {
+  const rows = await db
+    .select({ place: photos.place })
+    .from(photos)
+    .where(
+      sql`${photos.place} is not null
+        and ${photos.lat} ~ '^-?[0-9.]+$' and ${photos.lng} ~ '^-?[0-9.]+$'
+        and round(${photos.lat}::numeric, 3) = round(${lat}::numeric, 3)
+        and round(${photos.lng}::numeric, 3) = round(${lng}::numeric, 3)`
+    )
+    .limit(1);
+  const place = rows[0]?.place;
+  if (!place) return null;
+  // place is stored as "Locality, Country"
+  const parts = place.split(", ");
+  return {
+    place,
+    locality: parts.length > 1 ? parts.slice(0, -1).join(", ") : null,
+    country: parts[parts.length - 1],
+  };
+}
+
 async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> {
+  const cached = await findCachedPlace(lat, lng).catch(() => null);
+  if (cached) return cached;
+  await waitForGeocodeSlot();
+
   const empty = { place: null, locality: null, country: null };
   try {
     // Nominatim rejects requests without an identifying User-Agent (403)
@@ -65,9 +103,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> 
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-
-  if (!session?.user?.email || session.user.email !== process.env.ADMIN_EMAIL) {
+  if (!(await getAdminSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

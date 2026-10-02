@@ -1,20 +1,11 @@
-import { auth } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { generatePresignedPutUrl } from "@/lib/r2";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-
-    console.log("Session:", session?.user?.email);
-    console.log("Admin email:", process.env.ADMIN_EMAIL);
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    }
-
-    if (session.user.email !== process.env.ADMIN_EMAIL) {
-      return NextResponse.json({ error: "Not admin" }, { status: 403 });
+    if (!(await getAdminSession())) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { filename, contentType } = await request.json();
