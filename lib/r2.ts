@@ -58,6 +58,17 @@ export function getPublicUrl(key: string): string {
 }
 
 /**
+ * Read an object from R2 into memory (use for small files such as thumbnails)
+ */
+export async function getObject(
+  key: string
+): Promise<{ body: Buffer; contentType?: string }> {
+  const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const bytes = await response.Body!.transformToByteArray();
+  return { body: Buffer.from(bytes), contentType: response.ContentType };
+}
+
+/**
  * Upload a file to R2
  */
 export async function uploadFile(

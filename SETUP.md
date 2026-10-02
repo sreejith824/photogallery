@@ -13,7 +13,7 @@ Complete configuration guide for all SaaS platforms and services used in this pr
 | **Resend** | Email Delivery | Free tier (3,000/month, 100/day) | 5 min |
 | **Anthropic** | AI categories, tags, captions | Pay-per-use (~$0.01/photo) | 5 min |
 | **Nominatim (OSM)** | GPS → place name | Free public API (1 req/s) | none |
-| **Upstash Redis** | Rate Limiting (configured, not used in code yet) | Free tier | 5 min |
+| **Upstash Redis** | Rate limiting for public forms | Free tier | 5 min |
 
 See [Costs & Limits](#costs--limits) for what each free tier allows and which limit you'll hit first.
 
@@ -238,8 +238,12 @@ The background call happens *after* your upload completes, so the UI is responsi
 
 ### How It's Used
 
-- `/api/access-requests` — limits how many requests a visitor can submit (spam protection)
-- `/api/photos/presign` & `/api/photos/notify` — limits upload frequency (protects your Claude API bill)
+Limits live in `lib/ratelimit.ts` (sliding windows):
+
+- `/api/access-requests` — 5 per hour per IP, and 3 per day per email + photo (protects your inbox, the database and Resend's 100 emails/day)
+- `/api/share/validate` — 20 per minute per IP (slows down magic-link token guessing)
+
+Admin endpoints (upload, presign, notify) need the admin's Google login, so they aren't rate limited. If the Upstash variables are missing or Redis is down, requests are allowed (fail open) rather than breaking the site.
 
 ---
 
@@ -390,7 +394,7 @@ _Limits checked 2 October 2026 against each provider's pricing/limits page (link
 | Nominatim | Public API | $0 |
 | Google OAuth | — | $0 |
 | GitHub | Free | $0 |
-| Upstash Redis | Free (unused) | $0 |
+| Upstash Redis | Free | $0 |
 | Domain (`techforlife.in`, GoDaddy) | — | Renewal only |
 | **Total** | | **~$0 + ~$1 per 100 uploads** |
 
@@ -445,7 +449,20 @@ Direct uploads need a CORS rule on the bucket allowing `PUT` with header `conten
 - spacing Nominatim calls ≥1.1 s apart on the server
 - reusing the place of an existing photo taken within ~100 m instead of calling Nominatim
 
-**Upstash Redis Free** — [pricing](https://upstash.com/pricing/redis): 500K commands/month, 256 MB. Installed and configured but not called by the code yet; either wire up rate limiting or remove it.
+**Upstash Redis Free** — [pricing](https://upstash.com/pricing/redis): 500K commands/month, 256 MB. Used only by the two rate-limited public endpoints (one command per request), so the free tier is far more than enough.
+
+### Protection against high traffic
+
+| Layer | What it does |
+|---|---|
+| Vercel DDoS mitigation | Automatic on all plans; blocks floods before they reach the app. Blocked traffic doesn't count toward usage |
+| Attack Mode | Toggle in Vercel → Firewall during an attack: every visitor gets a challenge |
+| WAF custom rules / IP blocking | Up to 3 each on Hobby, configured in the Vercel dashboard |
+| CDN caching | Thumbnails are cached for a week, `/api/photos` and `/api/categories` for 60 s, public photo details for an hour. Repeat hits are served by the CDN without touching functions, Neon or R2 |
+| Rate limits (Upstash) | Access-request form and magic-link validation, see section 7 |
+| Admin-only APIs | Uploads, edits and AI classification need the admin's Google login |
+
+On Hobby, going over a monthly allowance pauses that feature for up to 30 days instead of billing you, so the risk from heavy traffic is downtime, not cost. R2 beyond its free tier is billed: set a budget alert in Cloudflare if billing is enabled.
 
 ### When to upgrade
 

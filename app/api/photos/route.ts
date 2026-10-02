@@ -27,7 +27,11 @@ export async function GET(request: NextRequest) {
       .from(photos)
       .where(whereClause);
 
-    return NextResponse.json(result);
+    // Shared CDN cache: a burst of visitors costs one database query per minute.
+    // New uploads and edits show up on the gallery within about a minute.
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+    });
   } catch (error) {
     console.error("Error fetching photos:", error);
     return NextResponse.json(

@@ -26,10 +26,19 @@ export async function GET(
     // Generate presigned URL for the full-size image
     const imageUrl = await generatePresignedGetUrl(photoData.r2Key, 86400); // 24 hours
 
-    return NextResponse.json({
-      ...photoData,
-      imageUrl,
-    });
+    // Public photos can be cached at the CDN (well within the 24h image URL);
+    // restricted ones must never be shared from a cache
+    return NextResponse.json(
+      { ...photoData, imageUrl },
+      {
+        headers: {
+          "Cache-Control":
+            photoData.visibility === "public"
+              ? "public, s-maxage=3600, stale-while-revalidate=600"
+              : "private, no-store",
+        },
+      }
+    );
   } catch (error) {
     console.error("Error fetching photo:", error);
     return NextResponse.json(
