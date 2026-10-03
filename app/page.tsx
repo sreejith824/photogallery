@@ -238,8 +238,9 @@ export default function GalleryPage() {
 
       {/* Search */}
       <div className="rise sticky top-0 z-40 border-y border-rule bg-background/85 backdrop-blur-md [animation-delay:500ms]">
-        <div className="px-5 sm:px-10 py-3">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-3 px-5 sm:px-10 py-3 font-mono text-[11px] uppercase tracking-[0.2em]">
+          <label className="flex items-center gap-2">
+            <span className="text-muted">Year</span>
             <input
               type="search"
               value={query}
@@ -249,30 +250,26 @@ export default function GalleryPage() {
               aria-label="Search photos"
               className="min-w-0 flex-1 border-b border-transparent bg-transparent py-1 font-mono text-[13px] outline-none placeholder:text-foreground/35 focus:border-foreground [&::-webkit-search-cancel-button]:appearance-none"
             />
-            {query && (
-              <button
-                onClick={() => applySearch("")}
-                className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent hover:underline underline-offset-4"
-              >
-                Clear ×
-              </button>
-            )}
-          </div>
-          {chips.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {chips.map((chip, i) => (
-                <button
-                  key={`${chip.label}-${i}`}
-                  onClick={() =>
-                    applySearch(chips.filter((_, j) => j !== i).flatMap((c) => c.words).join(" "))
-                  }
-                  aria-label={`Remove ${chip.label}`}
-                  className="border border-rule px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/70 transition-colors hover:border-accent hover:text-accent"
-                >
-                  {chip.label} ×
-                </button>
-              ))}
-            </div>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-muted">Place</span>
+            <input
+              type="text"
+              placeholder="anywhere"
+              value={filter.place ?? ""}
+              onChange={(e) =>
+                setFilter((prev) => ({ ...prev, place: e.target.value }))
+              }
+              className="w-28 sm:w-36 border-b border-transparent bg-transparent py-1 uppercase outline-none placeholder:text-foreground/30 focus:border-foreground"
+            />
+          </label>
+          {hasFilter && (
+            <button
+              onClick={() => setFilter({})}
+              className="ml-auto text-accent hover:underline underline-offset-4"
+            >
+              Clear ×
+            </button>
           )}
         </div>
       </div>
