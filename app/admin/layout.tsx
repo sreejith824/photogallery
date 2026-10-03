@@ -62,7 +62,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             Photo Pond Admin
           </Link>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">
+            <span className="hidden sm:inline text-sm text-gray-600">
               {session?.user?.email}
             </span>
             <button
