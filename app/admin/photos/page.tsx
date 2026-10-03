@@ -148,6 +148,34 @@ export default function AdminPhotosPage() {
     if (failed > 0) alert(`${failed} photo${failed === 1 ? "" : "s"} could not be deleted`);
   };
 
+  const visibilityBadge = (photo: Photo) => (
+    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+      photo.visibility === "public"
+        ? "bg-green-100 text-green-800"
+        : "bg-red-100 text-red-800"
+    }`}>
+      {photo.visibility}
+    </span>
+  );
+
+  const rowActions = (photo: Photo) => (
+    <>
+      <button
+        onClick={() => setEditingId(photo.id)}
+        className="mr-4 text-blue-600 hover:text-blue-700 font-medium"
+      >
+        Edit
+      </button>
+      <button
+        onClick={() => handleDelete(photo.id)}
+        disabled={deleting === photo.id}
+        className="text-red-600 hover:text-red-700 disabled:text-gray-400 font-medium"
+      >
+        {deleting === photo.id ? "Deleting..." : "Delete"}
+      </button>
+    </>
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -161,7 +189,7 @@ export default function AdminPhotosPage() {
       {/* Header */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">All Photos</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">All Photos</h1>
           <Link
             href="/admin"
             className="text-blue-600 hover:text-blue-700"
@@ -171,7 +199,7 @@ export default function AdminPhotosPage() {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
         {photos.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg">
             <p className="text-gray-500">No photos yet</p>
@@ -179,7 +207,7 @@ export default function AdminPhotosPage() {
         ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             {/* Bulk actions */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200">
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-gray-200">
               <span className="text-sm text-gray-600">
                 {selected.size > 0
                   ? `${selected.size} of ${photos.length} loaded selected`
@@ -190,15 +218,15 @@ export default function AdminPhotosPage() {
               <button
                 onClick={handleBulkDelete}
                 disabled={selected.size === 0 || bulkDeleting}
-                className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:bg-gray-300"
+                className="shrink-0 bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:bg-gray-300"
               >
                 {bulkDeleting ? "Deleting..." : `Delete selected${selected.size ? ` (${selected.size})` : ""}`}
               </button>
             </div>
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-12 pl-6 py-3 text-left">
+                  <th className="w-10 sm:w-12 pl-4 sm:pl-6 py-3 text-left">
                     <input
                       ref={selectAllRef}
                       type="checkbox"
@@ -208,12 +236,12 @@ export default function AdminPhotosPage() {
                       className="h-4 w-4 cursor-pointer accent-blue-600"
                     />
                   </th>
-                  <th className="w-20 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Caption</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categories</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Visibility</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="w-16 sm:w-20 px-2 sm:px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preview</th>
+                  <th className="pl-2 pr-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Caption</th>
+                  <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categories</th>
+                  <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Visibility</th>
+                  <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="hidden md:table-cell px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -222,7 +250,7 @@ export default function AdminPhotosPage() {
                     key={photo.id}
                     className={selected.has(photo.id) ? "bg-blue-50" : "hover:bg-gray-50"}
                   >
-                    <td className="w-12 pl-6 py-4">
+                    <td className="w-10 sm:w-12 pl-4 sm:pl-6 py-4 align-top md:align-middle">
                       <input
                         type="checkbox"
                         checked={selected.has(photo.id)}
@@ -231,7 +259,7 @@ export default function AdminPhotosPage() {
                         className="h-4 w-4 cursor-pointer accent-blue-600"
                       />
                     </td>
-                    <td className="w-20 px-3 py-2">
+                    <td className="w-16 sm:w-20 px-2 sm:px-3 py-2 align-top md:align-middle">
                       <button
                         onClick={() => setPreviewId(photo.id)}
                         aria-label={`Preview ${photo.caption || "photo"}`}
@@ -251,15 +279,21 @@ export default function AdminPhotosPage() {
                         )}
                       </button>
                     </td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                    <td className="pl-2 pr-4 sm:px-6 py-4 text-sm font-medium text-gray-900">
                       <button
                         onClick={() => setPreviewId(photo.id)}
-                        className="text-blue-600 hover:text-blue-700 truncate max-w-xs block text-left"
+                        className="text-blue-600 hover:text-blue-700 line-clamp-2 wrap-anywhere md:line-clamp-1 md:max-w-xs block text-left"
                       >
                         {photo.caption || "(Untitled)"}
                       </button>
+                      {/* On small screens the other columns are hidden; show their info here */}
+                      <div className="md:hidden mt-2 flex flex-wrap items-center gap-2 text-xs font-normal text-gray-500">
+                        {visibilityBadge(photo)}
+                        <span>{new Date(photo.uploadedAt).toLocaleDateString()}</span>
+                      </div>
+                      <div className="md:hidden mt-2 text-sm">{rowActions(photo)}</div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="hidden md:table-cell px-6 py-4">
                       <div className="flex flex-wrap gap-1">
                         {photo.categories?.length ? (
                           photo.categories.map((c) => (
@@ -275,32 +309,14 @@ export default function AdminPhotosPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        photo.visibility === "public"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}>
-                        {photo.visibility}
-                      </span>
+                    <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-500">
+                      {visibilityBadge(photo)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
+                    <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-500">
                       {new Date(photo.uploadedAt).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 text-right text-sm whitespace-nowrap">
-                      <button
-                        onClick={() => setEditingId(photo.id)}
-                        className="mr-4 text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(photo.id)}
-                        disabled={deleting === photo.id}
-                        className="text-red-600 hover:text-red-700 disabled:text-gray-400 font-medium"
-                      >
-                        {deleting === photo.id ? "Deleting..." : "Delete"}
-                      </button>
+                    <td className="hidden md:table-cell px-6 py-4 text-right text-sm whitespace-nowrap">
+                      {rowActions(photo)}
                     </td>
                   </tr>
                 ))}
