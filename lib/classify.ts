@@ -12,9 +12,12 @@ export interface Classification {
   caption: string;
 }
 
-// Credentials come from the environment: ANTHROPIC_API_KEY in production, or a
-// gateway's ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN in local dev.
-const client = new Anthropic();
+// Always the Anthropic API with ANTHROPIC_API_KEY. Pinned so a gateway's
+// ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN in the shell can't take over.
+const client = new Anthropic({
+  baseURL: "https://api.anthropic.com",
+  authToken: null,
+});
 
 // Extra guidance for the starting categories; other categories are listed by name
 const CATEGORY_HINTS: Record<string, string> = {

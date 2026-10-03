@@ -201,7 +201,7 @@ For production (Vercel), set `NEXTAUTH_URL` to your actual domain.
 - Model: Claude Opus 5.5 ($4 / $20 per million input / output tokens)
 - Per photo: ~$0.01 (photo is downscaled to 1024px first, ~1,500 input tokens + a short tool call)
 - 1,000 photos ≈ $10. Needs prepaid credit; without it uploads still work but photos stay uncategorised
-- Local dev can use a gateway instead of a personal key: the SDK reads `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` from the environment
+- Calls always go to api.anthropic.com with `ANTHROPIC_API_KEY`; any gateway `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` in your shell is ignored. `npm run dev` drops a shell `ANTHROPIC_API_KEY` so the one in `.env.local` wins, and scripts use `dotenv -o` for the same reason
 
 ### How It's Used
 

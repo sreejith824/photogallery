@@ -1,6 +1,6 @@
 // One-off: add date and place tags (e.g. "2026", "August 2026", "Øyer", "Norway")
 // to existing photos. Merges with existing tags, so it's safe to re-run.
-// Usage: npx dotenv -e .env.local -- node scripts/backfill-tags.js
+// Usage: npx dotenv -o -e .env.local -- node scripts/backfill-tags.js
 const postgres = require("postgres");
 const exifr = require("exifr");
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");

@@ -1,5 +1,5 @@
 // One-off: fill photos.place for rows that have GPS coordinates but no place.
-// Usage: npx dotenv -e .env.local -- node scripts/backfill-places.js
+// Usage: npx dotenv -o -e .env.local -- node scripts/backfill-places.js
 const postgres = require("postgres");
 
 const sql = postgres(process.env.DATABASE_URL);
