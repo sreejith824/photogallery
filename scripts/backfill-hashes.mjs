@@ -1,6 +1,6 @@
 // Compute duplicate-detection fingerprints for existing photos and report
 // duplicates already in the gallery. Doesn't delete anything.
-// Usage: npx dotenv -e .env.local -- node scripts/backfill-hashes.mjs
+// Usage: npx dotenv -o -e .env.local -- node scripts/backfill-hashes.mjs
 import postgres from "postgres";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { sha256Hex, differenceHash, hammingDistance, LOOKALIKE_MAX_DISTANCE } from "../lib/image-hash.ts";

@@ -1,6 +1,6 @@
 // One-off: re-read EXIF capture dates for existing photos (they were stored as
 // upload time because the old code looked for DateTime instead of DateTimeOriginal).
-// Usage: npx dotenv -e .env.local -- node scripts/backfill-taken-at.js
+// Usage: npx dotenv -o -e .env.local -- node scripts/backfill-taken-at.js
 const postgres = require("postgres");
 const exifr = require("exifr");
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");

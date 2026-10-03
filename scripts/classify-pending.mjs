@@ -1,6 +1,6 @@
 // Classify photos that haven't been classified yet (tags_pending = 1), e.g.
 // photos uploaded before classification existed or where the background call failed.
-// Usage: npx dotenv -e .env.local -- node scripts/classify-pending.mjs
+// Usage: npx dotenv -o -e .env.local -- node scripts/classify-pending.mjs
 import postgres from "postgres";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { classifyPhoto } from "../lib/classify.ts";
