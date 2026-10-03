@@ -37,6 +37,8 @@ interface GalleryResult {
 export default function GalleryPage() {
   const [filter, setFilter] = useState<{ year?: string; place?: string }>({});
   const [category, setCategory] = useState<string | null>(null);
+  // Phone only: the category list is folded behind a toggle
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const [categoryList, setCategoryList] = useState<Category[]>([]);
   const [result, setResult] = useState<GalleryResult | null>(null);
@@ -154,8 +156,7 @@ export default function GalleryPage() {
   return (
     <div className="grain min-h-screen bg-background text-foreground">
       {/* Header */}
-      <nav className="flex items-center justify-between px-5 sm:px-10 pt-6 font-mono text-[11px] uppercase tracking-[0.2em]">
-        <span className="rise">Index</span>
+      <nav className="flex items-center justify-end px-5 sm:px-10 pt-6 font-mono text-[11px] uppercase tracking-[0.2em]">
         <Link
           href="/admin"
           className="rise group relative [animation-delay:100ms]"
@@ -166,48 +167,65 @@ export default function GalleryPage() {
       </nav>
 
       {/* Masthead */}
-      <header className="px-5 sm:px-10 pt-12 sm:pt-16 pb-8 sm:pb-12">
-        <h1 className="rise font-display leading-[0.85] tracking-[-0.03em] text-[clamp(3.5rem,10vw,9rem)] [animation-delay:150ms]">
+      <header className="px-5 sm:px-10 pt-4 sm:pt-6 pb-8 sm:pb-12">
+        <h1 className="rise font-display leading-[0.85] tracking-[-0.03em] text-[clamp(2.5rem,7vw,6rem)] [animation-delay:150ms]">
           Photo <span className="italic text-accent">pond</span>
         </h1>
-        <div className="mt-8 grid gap-6 sm:grid-cols-[1fr_auto] sm:items-end">
-          <p className="rise max-w-md text-lg leading-snug text-foreground/80 [animation-delay:300ms]">
-            Moments, places and the light in between. A personal archive,
-            kept slowly.
-          </p>
-          <p className="rise font-mono text-[11px] uppercase tracking-[0.2em] text-muted [animation-delay:400ms]">
-            {loading ? "—" : String(frameCount).padStart(3, "0")} frames
-          </p>
-        </div>
+        <p className="rise mt-6 max-w-md text-lg leading-snug text-foreground/80 [animation-delay:300ms]">
+          Moments, places and the light in between. A personal archive, kept
+          slowly.
+        </p>
       </header>
 
       {/* Categories */}
       {categoryCounts.length > 0 && (
-        <nav className="rise flex flex-wrap items-baseline gap-x-7 gap-y-2 px-5 sm:px-10 pb-8 [animation-delay:450ms]">
-          {[{ name: null, label: "All", count: current?.total ?? 0 }, ...categoryCounts].map((c) => {
-            const active = category === c.name;
-            return (
-              <button
-                key={c.name ?? "all"}
-                onClick={() => setCategory(c.name)}
-                className={`group flex items-baseline gap-1.5 font-display text-3xl sm:text-4xl leading-none transition-colors ${
-                  active ? "italic text-accent" : "text-foreground/45 hover:text-foreground"
-                }`}
-              >
-                {c.label}
-                <sup className="font-mono text-[10px] not-italic tracking-[0.15em] text-muted">
-                  {String(c.count).padStart(2, "0")}
-                </sup>
-              </button>
-            );
-          })}
+        <nav className="rise px-5 sm:px-10 pb-6 sm:pb-8 [animation-delay:450ms]">
+          {/* Phone: show the current category, expand the full list on tap */}
+          <button
+            onClick={() => setCategoriesOpen((open) => !open)}
+            aria-expanded={categoriesOpen}
+            className="flex w-full items-baseline gap-1.5 sm:hidden"
+          >
+            <span className="font-display text-3xl italic leading-none text-accent">
+              {categoryLabel}
+            </span>
+            <sup className="font-mono text-[10px] tracking-[0.15em] text-muted">
+              {String(frameCount).padStart(2, "0")}
+            </sup>
+            <span className="ml-auto font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
+              {categoriesOpen ? "Close ×" : "Categories ≡"}
+            </span>
+          </button>
+          <div
+            className={`${categoriesOpen ? "flex" : "hidden"} mt-4 flex-wrap items-baseline gap-x-6 gap-y-2 sm:mt-0 sm:flex sm:gap-x-7`}
+          >
+            {[{ name: null, label: "All", count: current?.total ?? 0 }, ...categoryCounts].map((c) => {
+              const active = category === c.name;
+              return (
+                <button
+                  key={c.name ?? "all"}
+                  onClick={() => {
+                    setCategory(c.name);
+                    setCategoriesOpen(false);
+                  }}
+                  className={`group flex items-baseline gap-1.5 font-display text-2xl sm:text-4xl leading-none transition-colors ${
+                    active ? "italic text-accent" : "text-foreground/45 hover:text-foreground"
+                  }`}
+                >
+                  {c.label}
+                  <sup className="font-mono text-[10px] not-italic tracking-[0.15em] text-muted">
+                    {String(c.count).padStart(2, "0")}
+                  </sup>
+                </button>
+              );
+            })}
+          </div>
         </nav>
       )}
 
       {/* Filters */}
       <div className="rise sticky top-0 z-40 border-y border-rule bg-background/85 backdrop-blur-md [animation-delay:500ms]">
         <div className="flex flex-wrap items-center gap-x-8 gap-y-3 px-5 sm:px-10 py-3 font-mono text-[11px] uppercase tracking-[0.2em]">
-          <span className="text-muted">Filter</span>
           <label className="flex items-center gap-2">
             <span className="text-muted">Year</span>
             <input
@@ -229,7 +247,7 @@ export default function GalleryPage() {
               onChange={(e) =>
                 setFilter((prev) => ({ ...prev, place: e.target.value }))
               }
-              className="w-36 border-b border-transparent bg-transparent py-1 uppercase outline-none placeholder:text-foreground/30 focus:border-foreground"
+              className="w-28 sm:w-36 border-b border-transparent bg-transparent py-1 uppercase outline-none placeholder:text-foreground/30 focus:border-foreground"
             />
           </label>
           {hasFilter && (
