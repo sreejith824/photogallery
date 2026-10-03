@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import Lightbox from "@/components/Lightbox";
 import { isCategoryVisible, labelFromSlug, type Category } from "@/lib/categories";
 import { parseSearch } from "@/lib/search";
@@ -35,14 +36,40 @@ interface GalleryResult {
   categoryCounts: Record<string, number>;
 }
 
-export default function GalleryPage() {
-  // What's typed, and the search actually applied (debounced)
-  const [query, setQuery] = useState("");
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState<string | null>(null);
+// Update the gallery's URL in place. Next.js syncs native history calls with
+// useSearchParams. `push` adds a Back step; `replace` doesn't.
+function setUrlParams(changes: Record<string, string | null>, mode: "push" | "replace") {
+  const params = new URLSearchParams(window.location.search);
+  for (const [key, value] of Object.entries(changes)) {
+    if (value) params.set(key, value);
+    else params.delete(key);
+  }
+  const query = params.toString();
+  const url = query ? `?${query}` : window.location.pathname;
+  if (mode === "push") window.history.pushState(null, "", url);
+  else window.history.replaceState(null, "", url);
+}
+
+// The view lives in the URL (?category=nature&q=summer+2018&photo=<id>), so links
+// can be shared, refresh keeps your place, and Back steps through sections.
+function Gallery() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const category = searchParams.get("category");
+  const search = searchParams.get("q") ?? "";
+  const openPhotoId = searchParams.get("photo");
+  // What's typed; the URL holds the search actually applied (debounced)
+  const [query, setQuery] = useState(search);
+  // Back/forward changed the search: show it in the box
+  const [syncedSearch, setSyncedSearch] = useState(search);
+  if (search !== syncedSearch) {
+    setSyncedSearch(search);
+    if (query.trim() !== search) setQuery(search);
+  }
+  // Whether the open viewer added a history entry that closing should undo
+  const viewerPushed = useRef(false);
   // Phone only: the category list is folded behind a toggle
   const [categoriesOpen, setCategoriesOpen] = useState(false);
-  const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const [categoryList, setCategoryList] = useState<Category[]>([]);
   const [result, setResult] = useState<GalleryResult | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -67,9 +94,11 @@ export default function GalleryPage() {
 
   // Apply the search once typing pauses
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(query.trim()), 350);
+    const timer = setTimeout(() => {
+      if (query.trim() !== search) setUrlParams({ q: query.trim() || null, photo: null }, "replace");
+    }, 350);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, search]);
 
   // First page whenever the search or category change
   useEffect(() => {
@@ -144,7 +173,20 @@ export default function GalleryPage() {
   const chips = search ? parseSearch(search, categoryList).chips : [];
   const applySearch = (text: string) => {
     setQuery(text);
-    setSearch(text.trim());
+    setUrlParams({ q: text.trim() || null, photo: null }, "replace");
+  };
+  const setCategory = (slug: string | null) => setUrlParams({ category: slug, photo: null }, "push");
+  const openPhoto = (id: string) => {
+    viewerPushed.current = true;
+    setUrlParams({ photo: id }, "push");
+  };
+  const closePhoto = () => {
+    if (viewerPushed.current) {
+      viewerPushed.current = false;
+      window.history.back();
+    } else {
+      setUrlParams({ photo: null }, "replace");
+    }
   };
 
   const categoryCounts = categoryList
@@ -166,30 +208,14 @@ export default function GalleryPage() {
   const carouselPhotos = visiblePhotos.filter((p) => p.visibility !== "restricted");
   const openIndex = carouselPhotos.findIndex((p) => p.id === openPhotoId);
 
+  // A shared link to a photo that isn't on the first page (or is private):
+  // send it to the photo's own page instead
+  useEffect(() => {
+    if (!loading && openPhotoId && openIndex === -1) router.replace(`/photo/${openPhotoId}`);
+  }, [loading, openPhotoId, openIndex, router]);
+
   return (
-    <div className="grain min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <nav className="flex items-center justify-end px-5 sm:px-10 pt-6 font-mono text-[11px] uppercase tracking-[0.2em]">
-        <Link
-          href="/admin"
-          className="rise group relative [animation-delay:100ms]"
-        >
-          Admin
-          <span className="absolute -bottom-1 left-0 h-px w-0 bg-foreground transition-all duration-300 group-hover:w-full" />
-        </Link>
-      </nav>
-
-      {/* Masthead */}
-      <header className="px-5 sm:px-10 pt-4 sm:pt-6 pb-8 sm:pb-12">
-        <h1 className="rise font-display leading-[0.85] tracking-[-0.03em] text-[clamp(2.5rem,7vw,6rem)] [animation-delay:150ms]">
-          Photo <span className="italic text-accent">pond</span>
-        </h1>
-        <p className="rise mt-6 max-w-md text-lg leading-snug text-foreground/80 [animation-delay:300ms]">
-          Moments, places and the light in between. A personal archive, kept
-          slowly.
-        </p>
-      </header>
-
+    <>
       {/* Categories */}
       {categoryCounts.length > 0 && (
         <nav className="rise px-5 sm:px-10 pb-6 sm:pb-8 [animation-delay:450ms]">
@@ -307,7 +333,7 @@ export default function GalleryPage() {
                   // Plain clicks open the carousel; cmd/ctrl-click still opens the page
                   if (photo.visibility === "restricted" || e.metaKey || e.ctrlKey || e.shiftKey) return;
                   e.preventDefault();
-                  setOpenPhotoId(photo.id);
+                  openPhoto(photo.id);
                 }}
               >
                 {photo.thumbnailKey ? (
@@ -377,13 +403,47 @@ export default function GalleryPage() {
           photos={carouselPhotos}
           index={openIndex}
           label={categoryLabel}
-          onIndexChange={(i) => setOpenPhotoId(carouselPhotos[i].id)}
-          onClose={() => setOpenPhotoId(null)}
+          onIndexChange={(i) => setUrlParams({ photo: carouselPhotos[i].id }, "replace")}
+          onClose={closePhoto}
           hasMore={Boolean(nextCursor)}
           onNeedMore={loadMore}
           total={frameCount}
         />
       )}
+    </>
+  );
+}
+
+// Header and footer are static and prerendered; the gallery reads the URL, so
+// it renders on the client inside a Suspense boundary.
+export default function GalleryPage() {
+  return (
+    <div className="grain min-h-screen bg-background text-foreground">
+      {/* Header */}
+      <nav className="flex items-center justify-end px-5 sm:px-10 pt-6 font-mono text-[11px] uppercase tracking-[0.2em]">
+        <Link
+          href="/admin"
+          className="rise group relative [animation-delay:100ms]"
+        >
+          Admin
+          <span className="absolute -bottom-1 left-0 h-px w-0 bg-foreground transition-all duration-300 group-hover:w-full" />
+        </Link>
+      </nav>
+
+      {/* Masthead */}
+      <header className="px-5 sm:px-10 pt-4 sm:pt-6 pb-8 sm:pb-12">
+        <h1 className="rise font-display leading-[0.85] tracking-[-0.03em] text-[clamp(2.5rem,7vw,6rem)] [animation-delay:150ms]">
+          Photo <span className="italic text-accent">pond</span>
+        </h1>
+        <p className="rise mt-6 max-w-md text-lg leading-snug text-foreground/80 [animation-delay:300ms]">
+          Moments, places and the light in between. A personal archive, kept
+          slowly.
+        </p>
+      </header>
+
+      <Suspense>
+        <Gallery />
+      </Suspense>
 
       {/* Footer */}
       <footer className="mt-24 border-t border-rule px-5 sm:px-10 py-10">
