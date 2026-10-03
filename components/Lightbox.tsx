@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import Link from "next/link";
 
 export interface LightboxPhoto {
   id: string;
@@ -9,6 +8,7 @@ export interface LightboxPhoto {
   caption: string | null;
   takenAt: string | null;
   place: string | null;
+  tags?: string[] | null;
 }
 
 interface LightboxProps {
@@ -130,6 +130,8 @@ export default function Lightbox({
         day: "numeric",
       }),
   ].filter(Boolean);
+  // Year and "August 2026" tags repeat the date shown above
+  const tags = (photo.tags ?? []).filter((t) => !/^(\p{L}+ )?\d{4}$/u.test(t));
 
   return (
     <div
@@ -153,9 +155,6 @@ export default function Lightbox({
           {String(index + 1).padStart(2, "0")} — {String(total ?? photos.length).padStart(2, "0")}
         </span>
         <div className="flex items-center gap-6">
-          <Link href={`/photo/${photo.id}`} className="hover:text-white">
-            Details
-          </Link>
           <button onClick={onClose} className="hover:text-white" aria-label="Close">
             Close ✕
           </button>
@@ -214,6 +213,18 @@ export default function Lightbox({
           <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.2em] text-white/50">
             {meta.join(" · ")}
           </p>
+        )}
+        {tags.length > 0 && (
+          <ul className="mx-auto mt-3 flex max-w-2xl flex-wrap justify-center gap-1.5">
+            {tags.map((tag) => (
+              <li
+                key={tag}
+                className="border border-white/15 px-2 py-0.5 font-mono text-[10px] text-white/60"
+              >
+                {tag}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
