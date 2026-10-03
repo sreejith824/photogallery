@@ -3,6 +3,8 @@ import { photos } from "@/lib/schema";
 import { NextRequest, NextResponse } from "next/server";
 import { sql, getTableColumns, type SQL } from "drizzle-orm";
 import { decodeCursor, encodeCursor, parseLimit, withoutSortKey } from "@/lib/pagination";
+import { listCategories } from "@/lib/category-store";
+import { parseSearch, searchPeriods } from "@/lib/search";
 
 // Newest first: capture date, falling back to upload date for photos without EXIF
 const sortExpr = sql`coalesce(${photos.takenAt}, ${photos.uploadedAt})`;
@@ -10,14 +12,13 @@ const sortExpr = sql`coalesce(${photos.takenAt}, ${photos.uploadedAt})`;
 const sortKeyExpr = sql<string>`to_char(${sortExpr}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`;
 
 // Public gallery, one page at a time.
-// Query: year, place, category, cursor, limit (default 24).
+// Query: q (plain-language search, see lib/search.ts), category, cursor, limit (default 24).
 // The first page (no cursor) also returns `total` and `categoryCounts` for the
-// year/place filter, so the tabs can show counts without loading every photo.
+// search, so the tabs can show counts without loading every photo.
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const year = searchParams.get("year");
-    const place = searchParams.get("place");
+    const q = searchParams.get("q")?.trim();
     const category = searchParams.get("category");
     const cursor = decodeCursor(searchParams.get("cursor"));
     const limit = parseLimit(searchParams.get("limit"));
@@ -25,14 +26,8 @@ export async function GET(request: NextRequest) {
     // Filters shared by the page query and the counts (category excluded)
     let baseWhere: SQL = sql`${photos.visibility} = 'public'`;
 
-    if (year && /^\d{4}$/.test(year)) {
-      const startDate = new Date(`${year}-01-01`).toISOString();
-      const endDate = new Date(`${year}-12-31`).toISOString();
-      baseWhere = sql`${baseWhere} AND ((${photos.takenAt} >= ${startDate} AND ${photos.takenAt} <= ${endDate}) OR (${photos.takenAt} IS NULL AND ${photos.uploadedAt} >= ${startDate} AND ${photos.uploadedAt} <= ${endDate}))`;
-    }
-
-    if (place) {
-      baseWhere = sql`${baseWhere} AND ${photos.place} ILIKE ${`%${place}%`}`;
+    if (q) {
+      baseWhere = sql`${baseWhere} AND ${await searchWhere(q)}`;
     }
 
     let pageWhere = baseWhere;
@@ -89,4 +84,39 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+const list = (values: (string | number)[]) => sql.join(values.map((v) => sql`${v}`), sql`, `);
+
+// "50%_off" -> "50\%\_off", so user text can't act as LIKE wildcards
+const escapeLike = (text: string) => text.replace(/[\\%_]/g, "\\$&");
+
+// SQL condition for a plain-language search. Dates use the same capture-or-upload
+// date as the sort order.
+async function searchWhere(q: string): Promise<SQL> {
+  const categories = (await listCategories()).filter((c) => !c.hidden);
+  const search = parseSearch(q, categories);
+  const { yearMonths, years, months } = searchPeriods(search);
+  const conditions: SQL[] = [];
+
+  if (search.categories.length > 0) {
+    conditions.push(sql`${photos.categories} && array[${list(search.categories)}]::text[]`);
+  }
+  if (yearMonths.length > 0) {
+    conditions.push(sql`to_char(${sortExpr}, 'YYYY-MM') in (${list(yearMonths)})`);
+  }
+  if (years.length > 0) {
+    conditions.push(sql`extract(year from ${sortExpr})::int in (${list(years)})`);
+  }
+  if (months.length > 0) {
+    conditions.push(sql`extract(month from ${sortExpr})::int in (${list(months)})`);
+  }
+  for (const term of search.terms) {
+    const pattern = `%${escapeLike(term)}%`;
+    conditions.push(
+      sql`(array_to_string(${photos.tags}, ' ') ilike ${pattern} or ${photos.caption} ilike ${pattern} or ${photos.place} ilike ${pattern})`
+    );
+  }
+
+  return conditions.length > 0 ? sql.join(conditions, sql` AND `) : sql`true`;
 }

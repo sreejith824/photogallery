@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Lightbox from "@/components/Lightbox";
 import { isCategoryVisible, labelFromSlug, type Category } from "@/lib/categories";
+import { parseSearch } from "@/lib/search";
 
 interface Photo {
   id: string;
@@ -24,7 +25,7 @@ interface PhotoPage {
   categoryCounts?: Record<string, number>;
 }
 
-// Everything loaded for one query (filters + category). Keyed so responses for
+// Everything loaded for one query (search + category). Keyed so responses for
 // an older query are ignored.
 interface GalleryResult {
   key: string;
@@ -35,7 +36,9 @@ interface GalleryResult {
 }
 
 export default function GalleryPage() {
-  const [filter, setFilter] = useState<{ year?: string; place?: string }>({});
+  // What's typed, and the search actually applied (debounced)
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   // Phone only: the category list is folded behind a toggle
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -49,8 +52,7 @@ export default function GalleryPage() {
   const inFlightCursor = useRef<string | null>(null);
 
   const params = new URLSearchParams();
-  if (filter.year) params.set("year", filter.year);
-  if (filter.place) params.set("place", filter.place);
+  if (search) params.set("q", search);
   if (category) params.set("category", category);
   const queryKey = params.toString();
   const queryKeyRef = useRef(queryKey);
@@ -63,7 +65,13 @@ export default function GalleryPage() {
       .catch(() => setCategoryList([]));
   }, []);
 
-  // First page whenever the filters or category change
+  // Apply the search once typing pauses
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(query.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // First page whenever the search or category change
   useEffect(() => {
     queryKeyRef.current = queryKey;
     fetch(`/api/photos?${queryKey}`)
@@ -132,7 +140,12 @@ export default function GalleryPage() {
 
   const photos = current?.photos ?? [];
   const counts = current?.categoryCounts ?? {};
-  const hasFilter = Boolean(filter.year || filter.place);
+  // How the search was read, shown as removable chips
+  const chips = search ? parseSearch(search, categoryList).chips : [];
+  const applySearch = (text: string) => {
+    setQuery(text);
+    setSearch(text.trim());
+  };
 
   const categoryCounts = categoryList
     .map((c) => ({
@@ -223,19 +236,19 @@ export default function GalleryPage() {
         </nav>
       )}
 
-      {/* Filters */}
+      {/* Search */}
       <div className="rise sticky top-0 z-40 border-y border-rule bg-background/85 backdrop-blur-md [animation-delay:500ms]">
         <div className="flex flex-wrap items-center gap-x-8 gap-y-3 px-5 sm:px-10 py-3 font-mono text-[11px] uppercase tracking-[0.2em]">
           <label className="flex items-center gap-2">
             <span className="text-muted">Year</span>
             <input
-              type="number"
-              placeholder="any"
-              value={filter.year ?? ""}
-              onChange={(e) =>
-                setFilter((prev) => ({ ...prev, year: e.target.value }))
-              }
-              className="w-20 border-b border-transparent bg-transparent py-1 outline-none placeholder:text-foreground/30 focus:border-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applySearch(query)}
+              placeholder="Search — nature, summer 2018, oslo…"
+              aria-label="Search photos"
+              className="min-w-0 flex-1 border-b border-transparent bg-transparent py-1 font-mono text-[13px] outline-none placeholder:text-foreground/35 focus:border-foreground [&::-webkit-search-cancel-button]:appearance-none"
             />
           </label>
           <label className="flex items-center gap-2">
@@ -276,7 +289,7 @@ export default function GalleryPage() {
         ) : visiblePhotos.length === 0 ? (
           <div className="px-4 py-32 text-center">
             <p className="font-display text-4xl italic text-muted">
-              {hasFilter || category ? "Nothing matches that." : "The darkroom is empty."}
+              {search || category ? "Nothing matches that." : "The darkroom is empty."}
             </p>
           </div>
         ) : (
